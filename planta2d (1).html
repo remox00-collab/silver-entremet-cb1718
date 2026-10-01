@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Planta2D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+  :root{
+    --bg:#141c28; --surface:#1c2735; --surface2:#243244; --line:#33465d;
+    --accent:#5eead4; --accent-dim:#2d6e63; --text:#e8edf2; --muted:#8a9bb0; --warn:#f87171;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+  body{
+    margin:0; min-height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,Consolas,monospace;}
+  header{
+    position:sticky; top:0; top:env(safe-area-inset-top,0px);
+    background:var(--bg); padding:18px 16px 10px; z-index:5;
+    border-bottom:1px solid var(--line);
+  }
+  header h1{margin:0; font-size:19px; font-weight:600; letter-spacing:.2px;}
+  header p{margin:4px 0 0; font-size:13px; color:var(--muted);}
+  main{padding:16px; max-width:520px; margin:0 auto; padding-bottom:40px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px;}
+  .card h2{margin:0 0 10px; font-size:15px; font-weight:600;}
+  button{
+    font:inherit; border:1px solid var(--line); background:var(--surface2); color:var(--text);
+    padding:11px 16px; border-radius:8px; cursor:pointer;
+  }
+  button.primary{background:var(--accent); color:#0b1620; border-color:var(--accent); font-weight:600;}
+  button.danger{color:var(--warn); border-color:#5c2e2e;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  button:focus-visible, input:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .row{display:flex; gap:8px; flex-wrap:wrap;}
+  video, #shotCanvas{width:100%; border-radius:8px; background:#000; touch-action:none;}
+  #shotCanvas{display:none; max-height:60vh;}
+  .hint{font-size:12px; color:var(--muted); margin-top:6px;}
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+  .fields label{font-size:12px; color:var(--muted); display:block; margin-bottom:4px;}
+  .fields select{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:9px 10px; border-radius:7px; font-size:16px;}
+  .fields input, .fullw input{
+    width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
+    padding:9px 10px; border-radius:7px; font-size:16px;
+  }
+  .fullw{margin-top:10px;}
+  .roomItem{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--line);
+  }
+  .roomItem:last-child{border-bottom:none;}
+  .roomItem .dims{font-size:12px; color:var(--muted);}
+  .roomItem .name{font-weight:600;}
+  #planWrap{overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:8px; background:#0e1620; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
+  #plan3DWrap{display:none; width:100%; height:65vh; border:1px solid var(--line); border-radius:8px; background:#0e1620; overflow:hidden;}
+  #plan3DCanvas{display:block; width:100%; height:100%; touch-action:none;}
+  #planCanvas{display:block; touch-action:none;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:20px 0;}
+  .step{color:var(--accent); font-size:12px; font-weight:600; margin-bottom:8px;}
+  .cornerItem{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
+  .cornerItem:last-child{border-bottom:none;}
+  .cornerItem .ang{width:64px; flex:0 0 auto;}
+  .cornerItem input{width:90px; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:7px 8px; border-radius:6px; font-size:15px;}
+  #arOverlay{
+    display:none; position:fixed; inset:0; z-index:20;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  #arCrosshair{
+    position:absolute; top:50%; left:50%; width:26px; height:26px;
+    margin:-13px 0 0 -13px; border:3px solid #f87171; border-radius:50%;
+    transition:border-color .15s;
+  }
+  #arCount{
+    position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); left:16px;
+    background:rgba(20,28,40,0.75); color:#e8edf2; padding:6px 12px; border-radius:20px; font-size:13px;
+  }
+  #arControls{
+    position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 20px); left:0; right:0;
+    display:flex; justify-content:center; gap:10px; padding:0 16px;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f4f6f8; --surface:#fff; --surface2:#eef1f4; --line:#dbe1e8;
+      --accent-dim:#c9f3ea; --text:#151b23; --muted:#66707c;
+    }
+    #planWrap{background:#fbfbfb;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Planta2D</h1>
+  <p>Fotografe cada cômodo, marque os cantos e digite as medidas.</p>
+</header>
+<main>
+
+  <div class="card" id="captureCard">
+    <div class="step">Passo 1 — Cômodo</div>
+    <h2>Nova foto</h2>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="shotCanvas"></canvas>
+    <div class="row" style="margin-top:10px;">
+      <button id="startCam">Abrir câmera</button>
+      <button id="shootBtn" disabled>Tirar foto</button>
+      <button id="retakeBtn" style="display:none;">Refazer</button>
+    </div>
+    <p class="hint" id="pointsHint">Depois de tirar a foto, toque nos cantos do cômodo na imagem (na ordem, ao redor da parede).</p>
+
+    <div class="fields">
+      <div><label>Nome do cômodo</label><input id="roomName" placeholder="Ex: Quarto 1"></div>
+      <div><label>Altura (m)</label><input id="roomHeight" inputmode="decimal" placeholder="2.70"></div>
+      <div><label>Comprimento (m)</label><input id="roomLen" inputmode="decimal" placeholder="4.00"></div>
+      <div><label>Largura (m)</label><input id="roomWid" inputmode="decimal" placeholder="3.00"></div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button class="primary" id="addRoomBtn">Adicionar cômodo à planta</button>
+    </div>
+  </div>
+
+  <div class="card" id="arCard">
+    <div class="step">Passo 2 — Modo AR (experimental)</div>
+    <h2>Medir cantos automaticamente</h2>
+    <p class="hint" id="arSupportMsg">Verificando suporte a AR neste navegador…</p>
+    <button id="startAR" disabled>Iniciar AR</button>
+    <p class="hint">Funciona apenas no Chrome para Android com suporte a ARCore. Se não estiver disponível, use a medição por ângulos abaixo.</p>
+  </div>
+
+  <div id="arOverlay">
+    <svg id="arLinesSvg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+      <polyline id="arPolyline" fill="rgba(94,234,212,0.15)" stroke="#5eead4" stroke-width="3" points=""></polyline>
+    </svg>
+    <div id="arCrosshair"></div>
+    <div id="arCount">0 cantos</div>
+    <div id="arControls">
+      <button id="arMark">Marcar canto</button>
+      <button id="arFinish" class="primary">Usar estes cantos</button>
+      <button id="arCancel" class="danger">Cancelar</button>
+    </div>
+  </div>
+
+  <div class="card" id="angleCard">
+    <div class="step">Passo 2 — Ângulos dos cantos (opcional)</div>
+    <h2>Medir formato real do cômodo</h2>
+    <p class="hint">Fique parado num ponto (de preferência um canto ou o centro do cômodo). Ative o sensor, aponte o celular pra cada canto e toque em "Marcar canto". Depois informe a distância até cada um. Use pra cômodos que não são retângulos perfeitos.</p>
+    <div class="row" style="margin-top:10px;">
+      <button id="activateSensor">Ativar sensor de orientação</button>
+      <button id="markCornerBtn" disabled>Marcar canto</button>
+      <button id="clearCorners" class="danger">Limpar cantos</button>
+    </div>
+    <p class="hint">Direção atual: <span class="mono" id="headingReadout">—</span></p>
+    <div id="cornerList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Cômodos adicionados</h2>
+    <div id="roomList"><p class="empty">Nenhum cômodo ainda.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Planta 2D (arraste os cômodos para posicionar)</h2>
+    <div class="row" style="margin-bottom:10px;">
+      <button id="zoomOutBtn">− Zoom</button>
+      <button id="zoomInBtn">+ Zoom</button>
+      <button id="toggleOpeningMode">Ativar modo portas/janelas</button>
+      <button id="toggleWallDrawMode">Ativar modo parede manual</button>
+      <button class="primary" id="toggle3DBtn">Ver em 3D</button>
+    </div>
+    <div id="planWrap"><canvas id="planCanvas"></canvas></div>
+    <div id="plan3DWrap"><canvas id="plan3DCanvas"></canvas></div>
+    <p class="hint" id="hint3D" style="display:none;">Arraste pra girar a câmera, roda do mouse (ou pinça no celular) pra dar zoom. Isso é só visualização — pra editar, volte ao 2D.</p>
+    <p class="hint" id="openingHint">Modo portas/janelas: toque numa parede de qualquer cômodo pra adicionar.</p>
+    <p class="hint" id="wallDrawHint">Modo parede manual: toque no ponto inicial, depois no ponto final da parede.</p>
+    <p class="hint">Toque num cômodo pra selecionar, arraste pra mover. Com ele selecionado, arraste a alça verde acima dele pra girar livremente. Pinça com dois dedos (ou os botões de zoom acima) pra aproximar. Em cômodos com forma medida por AR/ângulos, aparecem bolinhas no meio de cada parede — toque numa pra editar só aquela parede.</p>
+    <div class="row" style="margin-top:10px;">
+      <button class="primary" id="exportPDF">Exportar PDF</button>
+      <button id="exportBackup">Salvar backup (.json)</button>
+      <button id="importBackup">Restaurar backup</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none;">
+    </div>
+    <p class="hint">Faça um backup sempre que terminar de ajustar a planta — se o link do site mudar, você restaura tudo a partir do arquivo.</p>
+  </div>
+
+  <div class="card" id="manualWallCard" style="display:none;">
+    <h2>Parede manual selecionada</h2>
+    <div class="fields">
+      <div><label>Comprimento (m)</label><input id="manualWallLen" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Arraste a parede na planta pra reposicionar.</p>
+    <div class="row" style="margin-top:10px;">
+      <button class="primary" id="saveManualWallLen">Salvar comprimento</button>
+      <button id="closeManualWallEditor">Fechar</button>
+      <button id="removeManualWall" class="danger">Remover parede</button>
+    </div>
+  </div>
+
+  <div class="card" id="openingPickerCard" style="display:none;">
+    <h2>Adicionar na parede</h2>
+    <div class="fields">
+      <div><label>Tipo</label>
+        <select id="openingType">
+          <option value="door">Porta simples (0.8m)</option>
+          <option value="sliding">Porta de correr / balcão (1.5m)</option>
+          <option value="window">Janela simples (1.0m)</option>
+          <option value="windowBig">Janela grande (1.8m)</option>
+        </select>
+      </div>
+      <div><label>Largura (m)</label><input id="openingWidth" inputmode="decimal"></div>
+      <div><label>Posição na parede (m do início)</label><input id="openingDist" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Já colocada? Arraste-a na planta pra mover pela parede.</p>
+    <div class="row" style="margin-top:10px;">
+      <button class="primary" id="addOpening">Adicionar</button>
+      <button id="cancelOpening">Cancelar</button>
+      <button id="removeOpening" class="danger" style="display:none;">Remover</button>
+    </div>
+  </div>
+
+  <div class="card" id="wallEditCard" style="display:none;">
+    <h2>Parede selecionada</h2>
+    <p class="hint" id="wallInfo"></p>
+    <div class="row">
+      <input id="wallLenInput" inputmode="decimal" style="width:110px;">
+      <button class="primary" id="applyWallLen">Aplicar</button>
+      <button id="cancelWallSel">Cancelar</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function(){
+  const STORAGE_KEY = "planta2d_rooms_v1";
+  const WALLS_STORAGE_KEY = "planta2d_walls_v1";
+  let rooms = [];
+  let walls = [];
+  try{
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if(saved) rooms = JSON.parse(saved);
+  }catch(e){ rooms = []; }
+  try{
+    const savedWalls = localStorage.getItem(WALLS_STORAGE_KEY);
+    if(savedWalls) walls = JSON.parse(savedWalls);
+  }catch(e){ walls = []; }
+
+  function saveRooms(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms)); }catch(e){}
+  }
+  function saveWalls(){
+    try{ localStorage.setItem(WALLS_STORAGE_KEY, JSON.stringify(walls)); }catch(e){}
+  }
+
+  // --- Camera capture ---
+  const video = document.getElementById('video');
+  const shotCanvas = document.getElementById('shotCanvas');
+  const startCam = document.getElementById('startCam');
+  const shootBtn = document.getElementById('shootBtn');
+  const retakeBtn = document.getElementById('retakeBtn');
+  const pointsHint = document.getElementById('pointsHint');
+  let stream = null;
+  let corners = []; // marked points on the shot, informational only
+
+  startCam.addEventListener('click', async () => {
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+      video.srcObject = stream;
+      shootBtn.disabled = false;
+      startCam.textContent = 'Câmera ativa';
+      startCam.disabled = true;
+    }catch(e){
+      pointsHint.textContent = 'Erro ao acessar câmera: ' + e.name + ' — ' + e.message;
+    }
+  });
+
+  shootBtn.addEventListener('click', () => {
+    const w = video.videoWidth, h = video.videoHeight;
+    if(!w) return;
+    shotCanvas.width = w; shotCanvas.height = h;
+    const ctx = shotCanvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+    video.style.display = 'none';
+    shotCanvas.style.display = 'block';
+    shootBtn.style.display = 'none';
+    retakeBtn.style.display = 'inline-block';
+    corners = [];
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    pointsHint.textContent = 'Toque nos cantos do cômodo na foto para marcar (opcional, apenas referência visual).';
+  });
+
+  retakeBtn.addEventListener('click', () => {
+    shotCanvas.style.display = 'none';
+    video.style.display = 'block';
+    shootBtn.style.display = 'inline-block';
+    shootBtn.disabled = true;
+    retakeBtn.style.display = 'none';
+    startCam.disabled = false;
+    startCam.textContent = 'Abrir câmera';
+    corners = [];
+  });
+
+  shotCanvas.addEventListener('click', (e) => {
+    const rect = shotCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (shotCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (shotCanvas.height / rect.height);
+    corners.push({x,y});
+    drawCorners();
+  });
+
+  function drawCorners(){
+    // redraw base frame not stored; just draw markers over existing canvas content
+    const ctx = shotCanvas.getContext('2d');
+    ctx.fillStyle = '#5eead4';
+    corners.forEach((p,i) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 10, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#0b1620';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(String(i+1), p.x-5, p.y+6);
+      ctx.fillStyle = '#5eead4';
+    });
+    if(corners.length > 1){
+      ctx.strokeStyle = '#5eead4';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(corners[0].x, corners[0].y);
+      corners.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+    }
+  }
+
+  // --- WebXR AR mode ---
+  let xrSession = null, xrRefSpace = null, hitTestSource = null, glCtx = null;
+  let arPoints = [];
+  let latestHitPose = null;
+  let pendingARPolygon = null;
+
+  async function checkARSupport(){
+    const msg = document.getElementById('arSupportMsg');
+    const btn = document.getElementById('startAR');
+    try{
+      if(navigator.xr && navigator.xr.isSessionSupported){
+        const ok = await navigator.xr.isSessionSupported('immersive-ar');
+        btn.disabled = !ok;
+        msg.textContent = ok ? 'AR disponível neste navegador.' : 'Este navegador/aparelho não suporta AR. Use a medição por ângulos abaixo.';
+      }else{
+        msg.textContent = 'WebXR não disponível neste navegador. Use a medição por ângulos abaixo.';
+      }
+    }catch(e){
+      msg.textContent = 'Não foi possível verificar suporte a AR. Use a medição por ângulos abaixo.';
+    }
+  }
+  checkARSupport();
+
+  document.getElementById('startAR').addEventListener('click', async () => {
+    const glCanvas = document.createElement('canvas');
+    glCtx = glCanvas.getContext('webgl', {xrCompatible:true, alpha:true});
+    try{
+      xrSession = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test','local'],
+        optionalFeatures: ['dom-overlay'],
+        domOverlay: {root: document.getElementById('arOverlay')}
+      });
+    }catch(e){
+      alert('Não foi possível iniciar AR: ' + e.message + '. Use a medição por ângulos abaixo.');
+      return;
+    }
+    await glCtx.makeXRCompatible();
+    xrSession.updateRenderState({baseLayer: new XRWebGLLayer(xrSession, glCtx)});
+    xrRefSpace = await xrSession.requestReferenceSpace('local');
+    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+    hitTestSource = await xrSession.requestHitTestSource({space: viewerSpace});
+    arPoints = [];
+    latestHitPose = null;
+    document.getElementById('arCount').textContent = '0 cantos';
+    document.getElementById('arOverlay').style.display = 'block';
+    xrSession.addEventListener('end', () => {
+      document.getElementById('arOverlay').style.display = 'none';
+      xrSession = null; hitTestSource = null;
+    });
+    xrSession.requestAnimationFrame(onARFrame);
+  });
+
+  function mat4MulVec4(m, v){
+    return [
+      m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+      m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+      m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+      m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]
+    ];
+  }
+  function mat4MulMat4(a,b){
+    const out = new Float32Array(16);
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      let s=0; for(let k=0;k<4;k++) s += a[k*4+r]*b[c*4+k];
+      out[c*4+r] = s;
+    }
+    return out;
+  }
+  function updateARLines(viewerPose){
+    const poly = document.getElementById('arPolyline');
+    if(!viewerPose || arPoints.length < 2){ poly.setAttribute('points',''); return; }
+    const view = viewerPose.views[0];
+    const viewProj = mat4MulMat4(view.projectionMatrix, view.transform.inverse.matrix);
+    const pts2d = arPoints.map(p => {
+      const clip = mat4MulVec4(viewProj, [p.x,p.y,p.z,1]);
+      if(clip[3] <= 0.01) return null;
+      const ndcX = clip[0]/clip[3], ndcY = clip[1]/clip[3];
+      return [(ndcX*0.5+0.5)*window.innerWidth, (1-(ndcY*0.5+0.5))*window.innerHeight];
+    }).filter(p => p);
+    if(pts2d.length < 2){ poly.setAttribute('points',''); return; }
+    const closed = arPoints.length >= 3 ? pts2d.concat([pts2d[0]]) : pts2d;
+    poly.setAttribute('points', closed.map(p=>p[0]+','+p[1]).join(' '));
+  }
+
+  function onARFrame(t, frame){
+    const session = frame.session;
+    session.requestAnimationFrame(onARFrame);
+    const glLayer = session.renderState.baseLayer;
+    glCtx.bindFramebuffer(glCtx.FRAMEBUFFER, glLayer.framebuffer);
+    glCtx.clearColor(0,0,0,0);
+    glCtx.clear(glCtx.COLOR_BUFFER_BIT | glCtx.DEPTH_BUFFER_BIT);
+    const results = frame.getHitTestResults(hitTestSource);
+    const crosshair = document.getElementById('arCrosshair');
+    if(results.length > 0){
+      latestHitPose = results[0].getPose(xrRefSpace).transform.position;
+      crosshair.style.borderColor = '#5eead4';
+    }else{
+      latestHitPose = null;
+      crosshair.style.borderColor = '#f87171';
+    }
+    updateARLines(frame.getViewerPose(xrRefSpace));
+  }
+
+  document.getElementById('arMark').addEventListener('click', () => {
+    if(!latestHitPose) return;
+    arPoints.push({x: latestHitPose.x, y: latestHitPose.y, z: latestHitPose.z});
+    document.getElementById('arCount').textContent = arPoints.length + ' cantos';
+  });
+  document.getElementById('arFinish').addEventListener('click', () => {
+    if(arPoints.length < 3){ alert('Marque pelo menos 3 cantos antes de finalizar.'); return; }
+    const origin = arPoints[0];
+    pendingARPolygon = arPoints.map(p => ({x: p.x - origin.x, y: p.z - origin.z}));
+    if(xrSession) xrSession.end();
+  });
+  document.getElementById('arCancel').addEventListener('click', () => {
+    if(xrSession) xrSession.end();
+  });
+
+  // --- Compass / angle measurement ---
+  let currentHeading = null;
+  let pendingCorners = []; // {heading, dist}
+  const activateSensor = document.getElementById('activateSensor');
+  const markCornerBtn = document.getElementById('markCornerBtn');
+  const headingReadout = document.getElementById('headingReadout');
+  const cornerList = document.getElementById('cornerList');
+
+  function normalizeHeading(e){
+    if(typeof e.webkitCompassHeading === 'number') return e.webkitCompassHeading;
+    if(e.alpha !== null && e.alpha !== undefined) return (360 - e.alpha) % 360;
+    return null;
+  }
+  function handleOrientation(e){
+    const h = normalizeHeading(e);
+    if(h !== null){
+      currentHeading = h;
+      headingReadout.textContent = h.toFixed(0) + '°';
+      markCornerBtn.disabled = false;
+    }
+  }
+  activateSensor.addEventListener('click', async () => {
+    try{
+      if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+        const res = await DeviceOrientationEvent.requestPermission();
+        if(res !== 'granted'){ headingReadout.textContent = 'permissão negada'; return; }
+      }
+      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.addEventListener('deviceorientation', handleOrientation, true);
+      activateSensor.textContent = 'Sensor ativo';
+      activateSensor.disabled = true;
+    }catch(e){
+      headingReadout.textContent = 'sensor indisponível';
+    }
+  });
+
+  markCornerBtn.addEventListener('click', () => {
+    if(currentHeading === null) return;
+    pendingCorners.push({heading: currentHeading, dist: null});
+    renderCorners();
+  });
+  document.getElementById('clearCorners').addEventListener('click', () => {
+    pendingCorners = [];
+    renderCorners();
+  });
+
+  function renderCorners(){
+    cornerList.innerHTML = '';
+    pendingCorners.forEach((c, i) => {
+      const div = document.createElement('div');
+      div.className = 'cornerItem';
+      div.innerHTML = `<span class="mono ang">Canto ${i+1}: ${c.heading.toFixed(0)}°</span>`;
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.inputMode = 'decimal';
+      inp.placeholder = 'dist. m';
+      inp.value = c.dist !== null ? c.dist : '';
+      inp.addEventListener('input', () => { c.dist = parseFloat(inp.value.replace(',','.')) || null; });
+      div.appendChild(inp);
+      cornerList.appendChild(div);
+    });
+  }
+
+  function computePolygonFromCorners(){
+    // needs >=3 corners with a valid distance; measurement point = local origin (0,0)
+    const valid = pendingCorners.filter(c => c.dist && c.dist > 0);
+    if(valid.length < 3) return null;
+    return valid.map(c => {
+      const rad = c.heading * Math.PI/180;
+      return { x: c.dist * Math.sin(rad), y: -c.dist * Math.cos(rad) };
+    });
+  }
+
+  // --- Add room ---
+  const addRoomBtn = document.getElementById('addRoomBtn');
+  addRoomBtn.addEventListener('click', () => {
+    const name = document.getElementById('roomName').value.trim() || ('Cômodo ' + (rooms.length+1));
+    const height = parseFloat(document.getElementById('roomHeight').value.replace(',','.'));
+    let len = parseFloat(document.getElementById('roomLen').value.replace(',','.'));
+    let wid = parseFloat(document.getElementById('roomWid').value.replace(',','.'));
+    const polygon = pendingARPolygon || computePolygonFromCorners();
+    if(polygon){
+      const xs = polygon.map(p=>p.x), ys = polygon.map(p=>p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      len = +(maxX-minX).toFixed(2); wid = +(maxY-minY).toFixed(2);
+    }else if(!len || !wid){
+      alert('Informe comprimento e largura em metros, ou marque ao menos 3 cantos com distância na medição por ângulos.');
+      return;
+    }
+    const photo = (shotCanvas.style.display === 'block') ? shotCanvas.toDataURL('image/jpeg', 0.5) : null;
+    rooms.push({
+      id: Date.now(),
+      name, height: height||null, len, wid,
+      polygon: polygon || null,
+      cornerCount: corners.length,
+      photo,
+      rot: 0,
+      openings: [],
+      locked: false,
+      x: 0.3 + (rooms.length % 3) * 0.3, y: 0.3 + Math.floor(rooms.length/3) * 0.3
+    });
+    saveRooms();
+    renderRoomList();
+    renderPlan();
+    document.getElementById('planWrap').scrollIntoView({behavior:'smooth', block:'nearest'});
+    // reset capture UI
+    document.getElementById('roomName').value = '';
+    document.getElementById('roomHeight').value = '';
+    document.getElementById('roomLen').value = '';
+    document.getElementById('roomWid').value = '';
+    pendingCorners = [];
+    pendingARPolygon = null;
+    renderCorners();
+    retakeBtn.click();
+  });
+
+  let editingRoomId = null;
+  function renderRoomList(){
+    const el = document.getElementById('roomList');
+    if(!rooms.length){ el.innerHTML = '<p class="empty">Nenhum cômodo ainda.</p>'; return; }
+    el.innerHTML = '';
+    rooms.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'roomItem';
+      if(editingRoomId === r.id){
+        div.innerHTML = `<div class="fullw" style="width:100%;">
+          <div class="fields">
+            <div><label>Comprimento (m)</label><input id="editLen" inputmode="decimal" value="${r.len}"></div>
+            <div><label>Largura (m)</label><input id="editWid" inputmode="decimal" value="${r.wid}"></div>
+            <div><label>Altura (m)</label><input id="editHeight" inputmode="decimal" value="${r.height||''}"></div>
+            <div><label>Ângulo (°)</label><input id="editRot" inputmode="decimal" value="${r.rot||0}"></div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button class="primary" id="saveEdit">Salvar</button>
+            <button id="cancelEdit">Cancelar</button>
+          </div>
+        </div>`;
+        el.appendChild(div);
+        document.getElementById('saveEdit').addEventListener('click', () => {
+          const len = parseFloat(document.getElementById('editLen').value.replace(',','.'));
+          const wid = parseFloat(document.getElementById('editWid').value.replace(',','.'));
+          const height = parseFloat(document.getElementById('editHeight').value.replace(',','.'));
+          const rot = parseFloat(document.getElementById('editRot').value.replace(',','.'));
+          if(len>0) r.len = len;
+          if(wid>0) r.wid = wid;
+          r.height = height||null;
+          r.rot = isNaN(rot) ? 0 : ((rot%360)+360)%360;
+          r.polygon = null;
+          editingRoomId = null;
+          saveRooms(); renderRoomList(); renderPlan();
+        });
+        document.getElementById('cancelEdit').addEventListener('click', () => {
+          editingRoomId = null; renderRoomList();
+        });
+        return;
+      }
+      div.innerHTML = `<div><div class="name" style="cursor:pointer;" title="Toque pra localizar na planta">${r.locked ? '🔒 ' : ''}${escapeHtml(r.name)}</div>
+        <div class="dims mono">${r.len} × ${r.wid} m${r.height ? ' · pé-direito ' + r.height + 'm' : ''}${r.polygon ? ' · forma real (' + r.polygon.length + ' cantos)' : ''}${r.rot ? ' · ' + r.rot + '°' : ''}</div></div>`;
+      div.querySelector('.name').addEventListener('click', () => focusRoomInPlan(r));
+      const btnRow = document.createElement('div');
+      btnRow.className = 'row';
+      const lockBtn = document.createElement('button'); lockBtn.textContent = r.locked ? '🔓 Destravar' : '🔒 Travar';
+      lockBtn.title = r.locked ? 'Permitir mover este cômodo' : 'Travar posição pra não esbarrar sem querer';
+      lockBtn.addEventListener('click', () => {
+        r.locked = !r.locked;
+        if(r.locked && selectedRoomId === r.id){ selectedRoomId = null; selectedWallIndex = null; hideWallEditor(); }
+        saveRooms(); renderRoomList(); renderPlan();
+      });
+      const rotL = document.createElement('button'); rotL.textContent = '⟲90°'; rotL.title = 'Girar cômodo';
+      rotL.addEventListener('click', () => { r.rot = ((r.rot||0) - 90 + 360) % 360; saveRooms(); renderPlan(); renderRoomList(); });
+      const rotR = document.createElement('button'); rotR.textContent = '⟳90°'; rotR.title = 'Girar cômodo';
+      rotR.addEventListener('click', () => { r.rot = ((r.rot||0) + 90) % 360; saveRooms(); renderPlan(); renderRoomList(); });
+      const editBtn = document.createElement('button'); editBtn.textContent = 'Editar';
+      editBtn.addEventListener('click', () => { editingRoomId = r.id; renderRoomList(); });
+      const del = document.createElement('button'); del.className = 'danger'; del.textContent = 'Remover';
+      del.addEventListener('click', () => {
+        rooms = rooms.filter(x => x.id !== r.id);
+        saveRooms(); renderRoomList(); renderPlan();
+      });
+      btnRow.append(lockBtn, rotL, rotR, editBtn, del);
+      div.appendChild(btnRow);
+      el.appendChild(div);
+    });
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // --- Floor plan canvas (scaled, draggable) ---
+  const planCanvas = document.getElementById('planCanvas');
+  const planWrap = document.getElementById('planWrap');
+  const pctx = planCanvas.getContext('2d');
+  const SCALE = 28; // px per meter
+  let zoom = 1;
+  let dragging = null, dragOffset = {x:0,y:0};
+  let panning = false, panStartClient = {x:0,y:0}, panScrollStart = {left:0,top:0};
+
+  function planSize(){
+    const eff = SCALE*zoom;
+    let maxX = 300, maxY = 240;
+    rooms.forEach(r => {
+      const cx = r.x*eff + r.len*eff/2, cy = r.y*eff + r.wid*eff/2;
+      const diag = Math.sqrt(r.len*r.len + r.wid*r.wid) * eff;
+      maxX = Math.max(maxX, cx + diag/2 + 40);
+      maxY = Math.max(maxY, cy + diag/2 + 40);
+    });
+    walls.forEach(w => {
+      maxX = Math.max(maxX, w.x1*eff+40, w.x2*eff+40);
+      maxY = Math.max(maxY, w.y1*eff+40, w.y2*eff+40);
+    });
+    return {w:maxX, h:maxY};
+  }
+
+  function rotatePoint(px,py,cx,cy,rad){
+    const dx=px-cx, dy=py-cy;
+    return [cx + dx*Math.cos(rad) - dy*Math.sin(rad), cy + dx*Math.sin(rad) + dy*Math.cos(rad)];
+  }
+
+  const MARGIN = 24; // reserved strip for ruler labels
+  let selectedRoomId = null, rotating = null, rotateStartAngle = 0, rotateStartRot = 0;
+  let selectedWallIndex = null;
+  let openingMode = false, pendingOpeningWall = null, editOpeningIndex = null, draggingOpening = null;
+  let wallDrawMode = false, wallDrawStart = null;
+  let selectedManualWallId = null, draggingWall = null, dragWallStart = null;
+
+  // --- Visão 3D ---
+  let view3D = false, threeScene=null, threeCamera=null, threeRenderer=null, threeControls=null;
+
+  function ensureThree(){
+    if(threeRenderer) return;
+    const canvas = document.getElementById('plan3DCanvas');
+    threeRenderer = new THREE.WebGLRenderer({canvas, antialias:true});
+    threeScene = new THREE.Scene();
+    threeScene.background = new THREE.Color(0x141c28);
+    threeCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
+    threeScene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(10,15,8);
+    threeScene.add(dir);
+    threeScene.add(new THREE.GridHelper(60, 60, 0x33465d, 0x1c2735));
+    threeControls = new THREE.OrbitControls(threeCamera, threeRenderer.domElement);
+    threeControls.enableDamping = true;
+    threeControls.maxPolarAngle = Math.PI*0.49;
+    (function animate(){
+      requestAnimationFrame(animate);
+      if(!view3D) return;
+      threeControls.update();
+      threeRenderer.render(threeScene, threeCamera);
+    })();
+  }
+  function resize3D(){
+    const wrap = document.getElementById('plan3DWrap');
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if(!w || !h) return;
+    threeRenderer.setSize(w,h,false);
+    threeCamera.aspect = w/h;
+    threeCamera.updateProjectionMatrix();
+  }
+  function wallSegmentsForEdge(ax,ay,bx,by,openings){
+    const len = Math.hypot(bx-ax, by-ay) || 0.001;
+    const sorted = (openings||[]).slice().sort((p,q)=>p.dist-q.dist);
+    const segs = []; let cursor = 0;
+    sorted.forEach(o => {
+      if(o.dist > cursor) segs.push([cursor, Math.min(o.dist,len)]);
+      cursor = Math.max(cursor, o.dist+o.width);
+    });
+    if(cursor < len) segs.push([cursor,len]);
+    const ux=(bx-ax)/len, uy=(by-ay)/len;
+    return segs.filter(([s,e])=>e-s>0.02).map(([s,e])=>{
+      const midD=(s+e)/2;
+      return {mx:ax+ux*midD, my:ay+uy*midD, segLen:e-s, dx:bx-ax, dy:by-ay};
+    });
+  }
+  function addWallBox(parent, mx,my,segLen,dx,dy,height,thickness,color){
+    const geo = new THREE.BoxGeometry(segLen, height, thickness);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color}));
+    mesh.position.set(mx, height/2, my);
+    mesh.rotation.y = Math.atan2(-dy, dx);
+    parent.add(mesh);
+  }
+  function build3DScene(){
+    ensureThree();
+    threeScene.children = threeScene.children.filter(c => c.isLight || c.type === 'GridHelper');
+    let cx=0, cz=0, count=0;
+    rooms.forEach(r => {
+      const h = r.height || 2.7;
+      const group = new THREE.Group();
+      group.position.set(r.x, 0, r.y);
+      group.rotation.y = -(r.rot||0)*Math.PI/180;
+      const pts = roomLocalPoints(r);
+      const shape = new THREE.Shape(pts.map(p => new THREE.Vector2(p.x,p.y)));
+      const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({color:0x223244, side:THREE.DoubleSide}));
+      floorMesh.rotation.x = -Math.PI/2;
+      floorMesh.position.y = 0.01;
+      group.add(floorMesh);
+      for(let i=0;i<pts.length;i++){
+        const a=pts[i], b=pts[(i+1)%pts.length];
+        const wo = (r.openings||[]).filter(o=>o.wallIndex===i);
+        wallSegmentsForEdge(a.x,a.y,b.x,b.y,wo).forEach(s => addWallBox(group, s.mx,s.my,s.segLen,s.dx,s.dy,h,0.12,0x5eead4));
+      }
+      threeScene.add(group);
+      cx += r.x+r.len/2; cz += r.y+r.wid/2; count++;
+    });
+    walls.forEach(w => {
+      wallSegmentsForEdge(w.x1,w.y1,w.x2,w.y2,[]).forEach(s => addWallBox(threeScene, s.mx,s.my,s.segLen,s.dx,s.dy,2.5,0.12,0xc7d2db));
+      cx += (w.x1+w.x2)/2; cz += (w.y1+w.y2)/2; count++;
+    });
+    const tx = count ? cx/count : 3, tz = count ? cz/count : 3;
+    threeCamera.position.set(tx+8, 9, tz+8);
+    threeControls.target.set(tx, 1, tz);
+    threeControls.update();
+    resize3D();
+  }
+  document.getElementById('toggle3DBtn').addEventListener('click', () => {
+    if(!rooms.length && !walls.length){ alert('Adicione pelo menos um cômodo ou parede antes de ver em 3D.'); return; }
+    view3D = !view3D;
+    document.getElementById('planWrap').style.display = view3D ? 'none' : 'block';
+    document.getElementById('plan3DWrap').style.display = view3D ? 'block' : 'none';
+    document.getElementById('hint3D').style.display = view3D ? 'block' : 'none';
+    document.getElementById('toggle3DBtn').textContent = view3D ? 'Voltar para 2D' : 'Ver em 3D';
+    if(view3D) build3DScene();
+  });
+  window.addEventListener('resize', () => { if(view3D && threeRenderer) resize3D(); });
+
+  document.getElementById('zoomInBtn').addEventListener('click', () => {
+    zoom = Math.min(3, zoom + 0.2);
+    renderPlan();
+  });
+  document.getElementById('zoomOutBtn').addEventListener('click', () => {
+    zoom = Math.max(0.4, zoom - 0.2);
+    renderPlan();
+  });
+
+  document.getElementById('toggleWallDrawMode').addEventListener('click', () => {
+    wallDrawMode = !wallDrawMode;
+    wallDrawStart = null;
+    document.getElementById('toggleWallDrawMode').textContent = wallDrawMode ? 'Desativar modo parede manual' : 'Ativar modo parede manual';
+    document.getElementById('wallDrawHint').textContent = wallDrawMode
+      ? 'Modo ativo: toque no ponto inicial, depois no ponto final da parede.'
+      : 'Com o modo ativo, toque no ponto inicial e depois no ponto final da parede, direto na planta. Fica independente de qualquer cômodo.';
+    renderPlan();
+  });
+
+  function pointKey(x,y){ return x.toFixed(3)+','+y.toFixed(3); }
+
+  function snapPoint(mx, my){
+    const eff = SCALE*zoom;
+    const tolM = 14/eff;
+    let best = null, bestDist = tolM;
+    walls.forEach(w => {
+      [[w.x1,w.y1],[w.x2,w.y2]].forEach(([px,py]) => {
+        const d = Math.hypot(mx-px, my-py);
+        if(d < bestDist){ bestDist = d; best = {x:px,y:py}; }
+      });
+    });
+    return best || {x:mx, y:my};
+  }
+
+  function tryCloseLoop(){
+    if(walls.length < 3) return;
+    const nodes = {};
+    walls.forEach(w => {
+      const k1 = pointKey(w.x1,w.y1), k2 = pointKey(w.x2,w.y2);
+      if(k1 === k2) return;
+      if(!nodes[k1]) nodes[k1] = {x:w.x1,y:w.y1, neighbors:[]};
+      if(!nodes[k2]) nodes[k2] = {x:w.x2,y:w.y2, neighbors:[]};
+      nodes[k1].neighbors.push(k2);
+      nodes[k2].neighbors.push(k1);
+    });
+    const visited = new Set();
+    for(const startKey in nodes){
+      if(visited.has(startKey)) continue;
+      const compKeys = []; const stack = [startKey]; const seen = new Set([startKey]);
+      while(stack.length){
+        const k = stack.pop();
+        compKeys.push(k);
+        nodes[k].neighbors.forEach(nk => { if(!seen.has(nk)){ seen.add(nk); stack.push(nk); } });
+      }
+      compKeys.forEach(k => visited.add(k));
+      const allDegree2 = compKeys.every(k => nodes[k].neighbors.length === 2);
+      if(allDegree2 && compKeys.length >= 3){
+        const ordered = [compKeys[0]];
+        let prev = null, cur = compKeys[0], ok = true;
+        while(true){
+          const nbrs = nodes[cur].neighbors;
+          const next = nbrs[0] === prev ? nbrs[1] : nbrs[0];
+          if(next === ordered[0]) break;
+          if(ordered.length > compKeys.length){ ok = false; break; }
+          ordered.push(next);
+          prev = cur; cur = next;
+        }
+        if(ok && ordered.length === compKeys.length){
+          convertLoopToRoom(ordered.map(k => ({x:nodes[k].x, y:nodes[k].y})));
+          return;
+        }
+      }
+    }
+  }
+
+  function convertLoopToRoom(vertices){
+    const xs = vertices.map(v=>v.x), ys = vertices.map(v=>v.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const maxX = Math.max(...xs), maxY = Math.max(...ys);
+    const polygon = vertices.map(v => ({x:v.x-minX, y:v.y-minY}));
+    rooms.push({
+      id: Date.now(),
+      name: 'Cômodo ' + (rooms.length+1),
+      height: null,
+      len: +(maxX-minX).toFixed(2),
+      wid: +(maxY-minY).toFixed(2),
+      polygon, rot: 0, openings: [], locked: false,
+      x: minX, y: minY
+    });
+    const usedKeys = new Set(vertices.map(v => pointKey(v.x,v.y)));
+    walls = walls.filter(w => {
+      const k1 = pointKey(w.x1,w.y1), k2 = pointKey(w.x2,w.y2);
+      if(!usedKeys.has(k1) || !usedKeys.has(k2)) return true;
+      const isEdge = vertices.some((v,i) => {
+        const nx = vertices[(i+1)%vertices.length];
+        return (pointKey(v.x,v.y)===k1 && pointKey(nx.x,nx.y)===k2) || (pointKey(v.x,v.y)===k2 && pointKey(nx.x,nx.y)===k1);
+      });
+      return !isEdge;
+    });
+    saveRooms(); saveWalls(); selectedManualWallId = null; hideManualWallEditor();
+    renderRoomList(); renderPlan();
+    alert('Paredes fechadas! Viraram um cômodo — agora dá pra arrastar, girar e renomear ele igual aos outros.');
+  }
+
+  function wallHitTestScreen(x,y){
+    const eff = SCALE*zoom;
+    for(let i=walls.length-1; i>=0; i--){
+      const w = walls[i];
+      const a = [w.x1*eff+MARGIN, w.y1*eff+MARGIN], b = [w.x2*eff+MARGIN, w.y2*eff+MARGIN];
+      const {dist} = segProject(x,y,a,b);
+      if(dist < 10) return w;
+    }
+    return null;
+  }
+  function showManualWallEditor(w){
+    const len = Math.hypot(w.x2-w.x1, w.y2-w.y1);
+    document.getElementById('manualWallLen').value = len.toFixed(2);
+    document.getElementById('manualWallCard').style.display = 'block';
+  }
+  function hideManualWallEditor(){
+    document.getElementById('manualWallCard').style.display = 'none';
+  }
+  document.getElementById('saveManualWallLen').addEventListener('click', () => {
+    const w = walls.find(x => x.id === selectedManualWallId);
+    if(!w) return;
+    const newLen = parseFloat(document.getElementById('manualWallLen').value.replace(',','.'));
+    if(!newLen || newLen<=0) return;
+    const curLen = Math.hypot(w.x2-w.x1, w.y2-w.y1) || 1;
+    const ux = (w.x2-w.x1)/curLen, uy = (w.y2-w.y1)/curLen;
+    w.x2 = w.x1 + ux*newLen; w.y2 = w.y1 + uy*newLen;
+    saveWalls(); tryCloseLoop(); renderPlan();
+    if(walls.find(x=>x.id===w.id)) showManualWallEditor(w);
+  });
+  document.getElementById('closeManualWallEditor').addEventListener('click', () => {
+    selectedManualWallId = null; hideManualWallEditor(); renderPlan();
+  });
+  document.getElementById('removeManualWall').addEventListener('click', () => {
+    walls = walls.filter(w => w.id !== selectedManualWallId);
+    selectedManualWallId = null;
+    saveWalls(); hideManualWallEditor(); renderPlan();
+  });
+
+  function openingAt(x,y){
+    const eff = SCALE*zoom;
+    for(let ri=rooms.length-1; ri>=0; ri--){
+      const r = rooms[ri];
+      if(!r.openings || !r.openings.length) continue;
+      const pts = wallMidpointsScreen(r);
+      for(let oi=0; oi<r.openings.length; oi++){
+        const o = r.openings[oi];
+        const a = pts[o.wallIndex], b = pts[(o.wallIndex+1)%pts.length];
+        const dx=b[0]-a[0], dy=b[1]-a[1];
+        const wl = Math.hypot(dx,dy) || 1;
+        const ux=dx/wl, uy=dy/wl;
+        const sx=a[0]+ux*o.dist*eff, sy=a[1]+uy*o.dist*eff;
+        const ex=a[0]+ux*(o.dist+o.width)*eff, ey=a[1]+uy*(o.dist+o.width)*eff;
+        const {dist} = segProject(x,y,[sx,sy],[ex,ey]);
+        if(dist < 12){
+          const local = roomLocalPoints(r);
+          const wallLenM = Math.hypot(local[(o.wallIndex+1)%local.length].x-local[o.wallIndex].x, local[(o.wallIndex+1)%local.length].y-local[o.wallIndex].y);
+          return {room:r, wallIndex:o.wallIndex, openingIndex:oi, opening:o, wallLenM};
+        }
+      }
+    }
+    return null;
+  }
+
+  document.getElementById('toggleOpeningMode').addEventListener('click', () => {
+    openingMode = !openingMode;
+    document.getElementById('toggleOpeningMode').textContent = openingMode ? 'Desativar modo portas/janelas' : 'Ativar modo portas/janelas';
+    document.getElementById('openingHint').textContent = openingMode
+      ? 'Modo ativo: toque numa parede na planta pra adicionar uma porta ou janela ali.'
+      : 'Com o modo ativo, toque numa parede de qualquer cômodo na planta pra adicionar.';
+  });
+  document.getElementById('openingType').addEventListener('change', (e) => {
+    const defaults = {door:0.8, sliding:1.5, window:1.0, windowBig:1.8};
+    document.getElementById('openingWidth').value = defaults[e.target.value];
+  });
+  document.getElementById('addOpening').addEventListener('click', () => {
+    if(!pendingOpeningWall) return;
+    const w = parseFloat(document.getElementById('openingWidth').value.replace(',','.'));
+    const dist = parseFloat(document.getElementById('openingDist').value.replace(',','.'));
+    const typeSel = document.getElementById('openingType').value;
+    const type = typeSel === 'windowBig' ? 'window' : typeSel;
+    if(!w || w<=0 || isNaN(dist) || dist<0) return;
+    if(dist+w > pendingOpeningWall.wallLenM + 0.001){
+      alert('Não cabe nessa parede (comprimento: ' + pendingOpeningWall.wallLenM.toFixed(2) + 'm).');
+      return;
+    }
+    const room = pendingOpeningWall.room;
+    room.openings = room.openings || [];
+    if(editOpeningIndex !== null){
+      room.openings[editOpeningIndex] = {wallIndex: pendingOpeningWall.index, dist, width:w, type};
+    }else{
+      room.openings.push({wallIndex: pendingOpeningWall.index, dist, width:w, type});
+    }
+    saveRooms(); renderPlan();
+    document.getElementById('openingPickerCard').style.display = 'none';
+    pendingOpeningWall = null; editOpeningIndex = null;
+  });
+  document.getElementById('cancelOpening').addEventListener('click', () => {
+    document.getElementById('openingPickerCard').style.display = 'none';
+    pendingOpeningWall = null; editOpeningIndex = null;
+  });
+  document.getElementById('removeOpening').addEventListener('click', () => {
+    if(!pendingOpeningWall || editOpeningIndex === null) return;
+    pendingOpeningWall.room.openings.splice(editOpeningIndex, 1);
+    saveRooms(); renderPlan();
+    document.getElementById('openingPickerCard').style.display = 'none';
+    pendingOpeningWall = null; editOpeningIndex = null;
+  });
+
+  function focusRoomInPlan(r){
+    selectedRoomId = r.locked ? null : r.id;
+    selectedWallIndex = null;
+    renderPlan();
+    const g = roomGeom(r);
+    planWrap.scrollTo({
+      left: Math.max(0, g.cx - planWrap.clientWidth/2),
+      top: Math.max(0, g.cy - planWrap.clientHeight/2),
+      behavior: 'smooth'
+    });
+  }
+
+  function roomGeom(r){
+    const eff = SCALE*zoom;
+    const px = r.x*eff+MARGIN, py = r.y*eff+MARGIN, pw = r.len*eff, ph = r.wid*eff;
+    return {px,py,pw,ph, cx:px+pw/2, cy:py+ph/2, rad:(r.rot||0)*Math.PI/180, eff};
+  }
+  function handlePos(r){
+    const g = roomGeom(r);
+    return rotatePoint(g.cx, g.py-28, g.cx, g.cy, g.rad);
+  }
+  function handleAt(x,y){
+    if(!selectedRoomId) return null;
+    const r = rooms.find(rm => rm.id === selectedRoomId);
+    if(!r || r.locked) return null;
+    const [hx,hy] = handlePos(r);
+    return (Math.hypot(x-hx,y-hy) < 18) ? r : null;
+  }
+
+  function roomLocalPoints(r){
+    if(r.polygon){
+      const xs = r.polygon.map(p=>p.x), ys = r.polygon.map(p=>p.y);
+      const minX = Math.min(...xs), minY = Math.min(...ys);
+      return r.polygon.map(p => ({x:p.x-minX, y:p.y-minY}));
+    }
+    return [{x:0,y:0},{x:r.len,y:0},{x:r.len,y:r.wid},{x:0,y:r.wid}];
+  }
+  function wallMidpointsScreen(r){
+    const g = roomGeom(r);
+    return roomLocalPoints(r).map(p => rotatePoint(g.px+p.x*g.eff, g.py+p.y*g.eff, g.cx, g.cy, g.rad));
+  }
+  function wallAt(x,y){
+    if(!selectedRoomId) return null;
+    const r = rooms.find(rm => rm.id === selectedRoomId);
+    if(!r || !r.polygon) return null;
+    const pts = wallMidpointsScreen(r);
+    for(let i=0;i<pts.length;i++){
+      const a = pts[i], b = pts[(i+1)%pts.length];
+      const mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2;
+      if(Math.hypot(x-mx,y-my) < 16) return {room:r, index:i};
+    }
+    return null;
+  }
+  function segProject(x,y,a,b){
+    const dx=b[0]-a[0], dy=b[1]-a[1];
+    const len2 = dx*dx+dy*dy;
+    if(len2 < 1e-6) return {t:0, dist:Math.hypot(x-a[0],y-a[1])};
+    let t = ((x-a[0])*dx + (y-a[1])*dy)/len2;
+    t = Math.max(0, Math.min(1,t));
+    const px_ = a[0]+dx*t, py_ = a[1]+dy*t;
+    return {t, dist: Math.hypot(x-px_, y-py_)};
+  }
+  function wallAtAnyRoom(x,y){
+    for(let ri=rooms.length-1; ri>=0; ri--){
+      const r = rooms[ri];
+      const pts = wallMidpointsScreen(r);
+      const local = roomLocalPoints(r);
+      for(let i=0;i<pts.length;i++){
+        const a = pts[i], b = pts[(i+1)%pts.length];
+        const {t,dist} = segProject(x,y,a,b);
+        if(dist < 14){
+          const wallLenM = Math.hypot(local[(i+1)%local.length].x-local[i].x, local[(i+1)%local.length].y-local[i].y);
+          return {room:r, index:i, wallLenM, tParam:t};
+        }
+      }
+    }
+    return null;
+  }
+  function applyWallLength(room, wallIndex, newLen){
+    if(!room.polygon) room.polygon = roomLocalPoints(room);
+    const poly = room.polygon, n = poly.length;
+    const a = poly[wallIndex], b = poly[(wallIndex+1)%n];
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const curLen = Math.hypot(dx,dy);
+    if(curLen < 1e-6) return;
+    poly[(wallIndex+1)%n] = {x: a.x + (dx/curLen)*newLen, y: a.y + (dy/curLen)*newLen};
+    const xs = poly.map(p=>p.x), ys = poly.map(p=>p.y);
+    room.len = +(Math.max(...xs)-Math.min(...xs)).toFixed(2);
+    room.wid = +(Math.max(...ys)-Math.min(...ys)).toFixed(2);
+  }
+  function showWallEditor(room, index){
+    const poly = room.polygon, n = poly.length;
+    const a = poly[index], b = poly[(index+1)%n];
+    const len = Math.hypot(b.x-a.x, b.y-a.y);
+    document.getElementById('wallEditCard').style.display = 'block';
+    document.getElementById('wallInfo').textContent = 'Parede ' + (index+1) + ' de ' + n + ' — comprimento atual: ' + len.toFixed(2) + ' m';
+    document.getElementById('wallLenInput').value = len.toFixed(2);
+  }
+  function hideWallEditor(){
+    document.getElementById('wallEditCard').style.display = 'none';
+  }
+  document.getElementById('applyWallLen').addEventListener('click', () => {
+    if(selectedWallIndex === null || !selectedRoomId) return;
+    const room = rooms.find(rm => rm.id === selectedRoomId);
+    const newLen = parseFloat(document.getElementById('wallLenInput').value.replace(',','.'));
+    if(!newLen || newLen <= 0) return;
+    applyWallLength(room, selectedWallIndex, newLen);
+    saveRooms(); renderRoomList(); renderPlan();
+    showWallEditor(room, selectedWallIndex);
+  });
+  document.getElementById('cancelWallSel').addEventListener('click', () => {
+    selectedWallIndex = null; hideWallEditor(); renderPlan();
+  });
+
+  function renderPlan(){
+    const eff = SCALE*zoom;
+    const {w,h} = planSize();
+    planCanvas.width = w+MARGIN; planCanvas.height = h+MARGIN;
+    const W = planCanvas.width, H = planCanvas.height;
+    pctx.clearRect(0,0,W,H);
+    // grid
+    pctx.strokeStyle = 'rgba(94,234,212,0.08)';
+    pctx.lineWidth = 1;
+    for(let gx=MARGIN; gx<W; gx+=eff){ pctx.beginPath(); pctx.moveTo(gx,MARGIN); pctx.lineTo(gx,H); pctx.stroke(); }
+    for(let gy=MARGIN; gy<H; gy+=eff){ pctx.beginPath(); pctx.moveTo(MARGIN,gy); pctx.lineTo(W,gy); pctx.stroke(); }
+
+    rooms.forEach(r => {
+      const px = r.x*eff+MARGIN, py = r.y*eff+MARGIN, pw = r.len*eff, ph = r.wid*eff;
+      const cx = px+pw/2, cy = py+ph/2;
+      const rad = (r.rot||0) * Math.PI/180;
+      pctx.fillStyle = 'rgba(94,234,212,0.12)';
+      pctx.strokeStyle = '#5eead4';
+      pctx.lineWidth = (r.id === selectedRoomId) ? 4 : 2.5;
+      pctx.save();
+      pctx.translate(cx,cy); pctx.rotate(rad); pctx.translate(-cx,-cy);
+      const localPts = roomLocalPoints(r);
+      const vpts = localPts.map(p => [px + p.x*eff, py + p.y*eff]);
+      pctx.beginPath();
+      vpts.forEach((v,i) => { if(i===0) pctx.moveTo(v[0],v[1]); else pctx.lineTo(v[0],v[1]); });
+      pctx.closePath();
+      pctx.fill(); pctx.stroke();
+
+      // aberturas (portas/janelas) — apagam um trecho da parede e desenham o símbolo
+      (r.openings||[]).forEach(o => {
+        const a = vpts[o.wallIndex], b = vpts[(o.wallIndex+1)%vpts.length];
+        const dx=b[0]-a[0], dy=b[1]-a[1];
+        const wl = Math.hypot(dx,dy) || 1;
+        const ux=dx/wl, uy=dy/wl, nx=-uy, ny=ux;
+        const startPx = o.dist*eff, widthPx = o.width*eff;
+        const sx=a[0]+ux*startPx, sy=a[1]+uy*startPx;
+        const ex=a[0]+ux*(startPx+widthPx), ey=a[1]+uy*(startPx+widthPx);
+        pctx.strokeStyle = '#0e1620'; pctx.lineWidth = 5;
+        pctx.beginPath(); pctx.moveTo(sx,sy); pctx.lineTo(ex,ey); pctx.stroke();
+        pctx.lineWidth = 1.5;
+        if(o.type === 'window'){
+          pctx.strokeStyle = '#5eead4';
+          [-3,3].forEach(off => {
+            pctx.beginPath(); pctx.moveTo(sx+nx*off, sy+ny*off); pctx.lineTo(ex+nx*off, ey+ny*off); pctx.stroke();
+          });
+        }else if(o.type === 'sliding'){
+          pctx.strokeStyle = '#5eead4'; pctx.lineWidth = 2;
+          const mx=(sx+ex)/2, my=(sy+ey)/2;
+          pctx.beginPath(); pctx.moveTo(sx,sy); pctx.lineTo(mx+nx*6,my+ny*6); pctx.stroke();
+          pctx.beginPath(); pctx.moveTo(mx-nx*6,my-ny*6); pctx.lineTo(ex,ey); pctx.stroke();
+        }else{
+          pctx.strokeStyle = '#5eead4'; pctx.lineWidth = 2;
+          pctx.beginPath(); pctx.moveTo(sx,sy); pctx.lineTo(sx+nx*widthPx, sy+ny*widthPx); pctx.stroke();
+          pctx.beginPath();
+          pctx.arc(sx, sy, widthPx, Math.atan2(ny,nx), Math.atan2(uy,ux));
+          pctx.stroke();
+        }
+      });
+
+      if(r.id === selectedRoomId){
+        for(let i=0;i<vpts.length;i++){
+          const a = vpts[i], b = vpts[(i+1)%vpts.length];
+          const mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2;
+          if(i === selectedWallIndex){
+            pctx.strokeStyle = '#fbbf24'; pctx.lineWidth = 5;
+            pctx.beginPath(); pctx.moveTo(a[0],a[1]); pctx.lineTo(b[0],b[1]); pctx.stroke();
+          }
+          pctx.fillStyle = (i === selectedWallIndex) ? '#fbbf24' : '#5eead4';
+          pctx.beginPath(); pctx.arc(mx,my,6,0,Math.PI*2); pctx.fill();
+        }
+      }
+      pctx.restore();
+
+      // nome centralizado dentro da área construída
+      pctx.save();
+      pctx.textAlign = 'center'; pctx.textBaseline = 'middle';
+      pctx.fillStyle = '#e8edf2';
+      pctx.font = '600 13px sans-serif';
+      pctx.fillText(r.name, cx, cy - (r.height ? 7 : 0));
+      if(r.height){
+        pctx.font = '10px monospace';
+        pctx.fillStyle = '#8a9bb0';
+        pctx.fillText('A: ' + r.height + 'm', cx, cy + 9);
+      }
+      pctx.restore();
+
+      // C (comprimento) alinhado com a parede horizontal
+      const cLabelPos = rotatePoint(cx, py+ph-10, cx, cy, rad);
+      pctx.save();
+      pctx.translate(cLabelPos[0], cLabelPos[1]);
+      pctx.rotate(rad);
+      pctx.textAlign = 'center'; pctx.textBaseline = 'middle';
+      pctx.font = '11px monospace'; pctx.fillStyle = '#8a9bb0';
+      pctx.fillText('C: ' + r.len + 'm', 0, 0);
+      pctx.restore();
+
+      // L (largura) alinhado com a parede vertical
+      const lLabelPos = rotatePoint(px+pw-10, cy, cx, cy, rad);
+      pctx.save();
+      pctx.translate(lLabelPos[0], lLabelPos[1]);
+      pctx.rotate(rad + Math.PI/2);
+      pctx.textAlign = 'center'; pctx.textBaseline = 'middle';
+      pctx.font = '11px monospace'; pctx.fillStyle = '#8a9bb0';
+      pctx.fillText('L: ' + r.wid + 'm', 0, 0);
+      pctx.restore();
+
+      if(r.id === selectedRoomId){
+        const [hx,hy] = rotatePoint(cx, py-28, cx, cy, rad);
+        pctx.strokeStyle = '#5eead4'; pctx.lineWidth = 1.5;
+        pctx.beginPath(); pctx.moveTo(cx,py); pctx.lineTo(hx,hy); pctx.stroke();
+        pctx.beginPath(); pctx.arc(hx,hy,10,0,Math.PI*2);
+        pctx.fillStyle = '#5eead4'; pctx.fill();
+        pctx.strokeStyle = '#0b1620'; pctx.lineWidth = 2; pctx.stroke();
+      }
+      if(r.locked){
+        const [lkx,lky] = rotatePoint(px+12, py+12, cx, cy, rad);
+        pctx.save();
+        pctx.font = '12px sans-serif'; pctx.textAlign = 'center'; pctx.textBaseline = 'middle';
+        pctx.fillStyle = 'rgba(138,155,176,0.85)';
+        pctx.fillText('🔒', lkx, lky);
+        pctx.restore();
+      }
+    });
+
+    // paredes manuais
+    walls.forEach(w => {
+      const x1=w.x1*eff+MARGIN, y1=w.y1*eff+MARGIN, x2=w.x2*eff+MARGIN, y2=w.y2*eff+MARGIN;
+      pctx.strokeStyle = (w.id === selectedManualWallId) ? '#fbbf24' : '#c7d2db';
+      pctx.lineWidth = Math.max(4, 0.15*eff);
+      pctx.lineCap = 'round';
+      pctx.beginPath(); pctx.moveTo(x1,y1); pctx.lineTo(x2,y2); pctx.stroke();
+      pctx.lineCap = 'butt';
+      const len = Math.hypot(w.x2-w.x1, w.y2-w.y1);
+      pctx.save();
+      pctx.fillStyle = '#8a9bb0'; pctx.font = '10px monospace';
+      pctx.textAlign = 'center'; pctx.textBaseline = 'bottom';
+      pctx.fillText(len.toFixed(2)+'m', (x1+x2)/2, (y1+y2)/2 - 6);
+      pctx.restore();
+    });
+    if(wallDrawStart){
+      const sx = wallDrawStart.x*eff+MARGIN, sy = wallDrawStart.y*eff+MARGIN;
+      pctx.fillStyle = '#fbbf24';
+      pctx.beginPath(); pctx.arc(sx,sy,7,0,Math.PI*2); pctx.fill();
+    }
+
+    // ruler strips (drawn last, over content, so measurements stay readable)
+    pctx.fillStyle = '#0e1620';
+    pctx.fillRect(0,0,W,MARGIN);
+    pctx.fillRect(0,0,MARGIN,H);
+    pctx.fillStyle = '#8a9bb0';
+    pctx.font = '10px monospace';
+    pctx.textBaseline = 'middle';
+    for(let m=0, gx=MARGIN; gx<W; m++, gx+=eff){
+      pctx.fillText(m+'m', gx+2, MARGIN/2);
+    }
+    for(let m=0, gy=MARGIN; gy<H; m++, gy+=eff){
+      pctx.fillText(m+'m', 2, gy+MARGIN/2);
+    }
+  }
+
+  function roomAt(x,y){
+    const eff = SCALE*zoom;
+    for(let i=rooms.length-1; i>=0; i--){
+      const r = rooms[i];
+      if(r.locked) continue;
+      const px=r.x*eff+MARGIN, py=r.y*eff+MARGIN, pw=r.len*eff, ph=r.wid*eff;
+      const cx = px+pw/2, cy = py+ph/2;
+      const rad = -(r.rot||0) * Math.PI/180;
+      const [lx,ly] = rotatePoint(x,y,cx,cy,rad);
+      if(lx>=px && lx<=px+pw && ly>=py && ly<=py+ph) return r;
+    }
+    return null;
+  }
+
+  function pointerPos(e, touch){
+    const rect = planCanvas.getBoundingClientRect();
+    const t = touch || (e.touches && e.touches[0]) || e;
+    const cx = t.clientX - rect.left;
+    const cy = t.clientY - rect.top;
+    return {x: cx * (planCanvas.width/rect.width), y: cy * (planCanvas.height/rect.height)};
+  }
+
+  function dragStart(e){
+    const p = pointerPos(e);
+    if(wallDrawMode){
+      const eff = SCALE*zoom;
+      const snapped = snapPoint((p.x-MARGIN)/eff, (p.y-MARGIN)/eff);
+      if(!wallDrawStart){
+        wallDrawStart = snapped;
+      }else{
+        const len = Math.hypot(snapped.x-wallDrawStart.x, snapped.y-wallDrawStart.y);
+        if(len > 0.05){
+          walls.push({id:Date.now(), x1:wallDrawStart.x, y1:wallDrawStart.y, x2:snapped.x, y2:snapped.y});
+          saveWalls();
+          tryCloseLoop();
+        }
+        wallDrawStart = null;
+      }
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(openingMode){
+      const oa = openingAt(p.x, p.y);
+      if(oa){
+        draggingOpening = oa;
+        pendingOpeningWall = {room:oa.room, index:oa.wallIndex, wallLenM:oa.wallLenM};
+        editOpeningIndex = oa.openingIndex;
+        document.getElementById('openingType').value = oa.opening.type === 'window' && oa.opening.width >= 1.4 ? 'windowBig' : oa.opening.type;
+        document.getElementById('openingWidth').value = oa.opening.width;
+        document.getElementById('openingDist').value = oa.opening.dist.toFixed(2);
+        document.getElementById('addOpening').textContent = 'Salvar alterações';
+        document.getElementById('removeOpening').style.display = 'inline-block';
+        document.getElementById('openingPickerCard').style.display = 'block';
+        e.preventDefault();
+        return;
+      }
+      const wr = wallAtAnyRoom(p.x, p.y);
+      if(wr){
+        pendingOpeningWall = wr;
+        editOpeningIndex = null;
+        document.getElementById('openingType').value = 'door';
+        document.getElementById('openingWidth').value = '0.8';
+        document.getElementById('openingDist').value = Math.max(0, (wr.tParam*wr.wallLenM - 0.4)).toFixed(2);
+        document.getElementById('addOpening').textContent = 'Adicionar';
+        document.getElementById('removeOpening').style.display = 'none';
+        document.getElementById('openingPickerCard').style.display = 'block';
+      }
+      e.preventDefault();
+      return;
+    }
+    const hr = handleAt(p.x, p.y);
+    if(hr){
+      const g = roomGeom(hr);
+      rotating = hr;
+      rotateStartAngle = Math.atan2(p.y-g.cy, p.x-g.cx) * 180/Math.PI;
+      rotateStartRot = hr.rot || 0;
+      e.preventDefault();
+      return;
+    }
+    const w = wallAt(p.x, p.y);
+    if(w){
+      selectedWallIndex = w.index;
+      showWallEditor(w.room, w.index);
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    selectedWallIndex = null;
+    hideWallEditor();
+    const r = roomAt(p.x, p.y);
+    if(r){
+      selectedRoomId = r.id;
+      const eff = SCALE*zoom;
+      dragging = r;
+      dragOffset = {x: p.x - r.x*eff - MARGIN, y: p.y - r.y*eff - MARGIN};
+      e.preventDefault();
+    }else{
+      selectedRoomId = null;
+      const mw = wallHitTestScreen(p.x, p.y);
+      if(mw){
+        selectedManualWallId = mw.id;
+        draggingWall = mw;
+        dragWallStart = {x:p.x, y:p.y, x1:mw.x1, y1:mw.y1, x2:mw.x2, y2:mw.y2};
+        showManualWallEditor(mw);
+        e.preventDefault();
+      }else{
+        hideManualWallEditor();
+        selectedManualWallId = null;
+        const t = e.touches ? e.touches[0] : e;
+        panning = true;
+        panStartClient = {x:t.clientX, y:t.clientY};
+        panScrollStart = {left: planWrap.scrollLeft, top: planWrap.scrollTop};
+        e.preventDefault();
+      }
+    }
+    renderPlan();
+  }
+  function dragMove(e){
+    const p = pointerPos(e);
+    if(draggingWall){
+      const eff = SCALE*zoom;
+      const dx = (p.x - dragWallStart.x)/eff, dy = (p.y - dragWallStart.y)/eff;
+      draggingWall.x1 = dragWallStart.x1+dx; draggingWall.y1 = dragWallStart.y1+dy;
+      draggingWall.x2 = dragWallStart.x2+dx; draggingWall.y2 = dragWallStart.y2+dy;
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(draggingOpening){
+      const eff = SCALE*zoom;
+      const pts = wallMidpointsScreen(draggingOpening.room);
+      const a = pts[draggingOpening.wallIndex], b = pts[(draggingOpening.wallIndex+1)%pts.length];
+      const {t} = segProject(p.x, p.y, a, b);
+      const newDist = Math.max(0, Math.min(draggingOpening.wallLenM - draggingOpening.opening.width, t*draggingOpening.wallLenM));
+      draggingOpening.opening.dist = newDist;
+      document.getElementById('openingDist').value = newDist.toFixed(2);
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(rotating){
+      const g = roomGeom(rotating);
+      const angle = Math.atan2(p.y-g.cy, p.x-g.cx) * 180/Math.PI;
+      rotating.rot = ((rotateStartRot + (angle-rotateStartAngle)) % 360 + 360) % 360;
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(dragging){
+      const eff = SCALE*zoom;
+      dragging.x = Math.max(0, (p.x - dragOffset.x - MARGIN)/eff);
+      dragging.y = Math.max(0, (p.y - dragOffset.y - MARGIN)/eff);
+      renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(panning){
+      const t = e.touches ? e.touches[0] : e;
+      planWrap.scrollLeft = panScrollStart.left - (t.clientX - panStartClient.x);
+      planWrap.scrollTop = panScrollStart.top - (t.clientY - panStartClient.y);
+      e.preventDefault();
+    }
+  }
+  function dragEnd(){
+    if(draggingWall){
+      const w = draggingWall;
+      const others = walls.filter(x => x.id !== w.id);
+      const eff = SCALE*zoom;
+      const tolM = 14/eff;
+      [['x1','y1'],['x2','y2']].forEach(([xk,yk]) => {
+        let best=null, bestDist=tolM;
+        others.forEach(o => {
+          [[o.x1,o.y1],[o.x2,o.y2]].forEach(([px,py]) => {
+            const d = Math.hypot(w[xk]-px, w[yk]-py);
+            if(d<bestDist){ bestDist=d; best={x:px,y:py}; }
+          });
+        });
+        if(best){ w[xk]=best.x; w[yk]=best.y; }
+      });
+      draggingWall = null;
+      saveWalls(); tryCloseLoop(); renderPlan();
+      return;
+    }
+    if(draggingOpening){ draggingOpening = null; saveRooms(); return; }
+    if(rotating){ rotating = null; saveRooms(); renderRoomList(); return; }
+    if(dragging){ dragging = null; saveRooms(); return; }
+    panning = false;
+  }
+
+  function touchDist(t1,t2){ return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
+  let pinchStartDist = null, pinchStartZoom = 1;
+  let longPressTimer = null, touchStartPos = null;
+
+  function handleLongPress(x,y){
+    dragging = null; rotating = null; panning = false; draggingWall = null; draggingOpening = null;
+    const mw = wallHitTestScreen(x,y);
+    if(mw){
+      if(confirm('Apagar esta parede manual?')){
+        walls = walls.filter(w => w.id !== mw.id);
+        if(selectedManualWallId === mw.id){ selectedManualWallId = null; hideManualWallEditor(); }
+        saveWalls(); renderPlan();
+      }
+      return;
+    }
+    const r = roomAt(x,y);
+    if(r){
+      if(confirm('Apagar o cômodo "' + r.name + '"?')){
+        rooms = rooms.filter(rm => rm.id !== r.id);
+        if(selectedRoomId === r.id){ selectedRoomId = null; selectedWallIndex = null; hideWallEditor(); }
+        saveRooms(); renderRoomList(); renderPlan();
+      }
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if(selectedManualWallId){
+      walls = walls.filter(w => w.id !== selectedManualWallId);
+      selectedManualWallId = null;
+      saveWalls(); hideManualWallEditor(); renderPlan();
+      e.preventDefault();
+      return;
+    }
+    if(editOpeningIndex !== null && pendingOpeningWall){
+      pendingOpeningWall.room.openings.splice(editOpeningIndex, 1);
+      saveRooms(); renderPlan();
+      document.getElementById('openingPickerCard').style.display = 'none';
+      pendingOpeningWall = null; editOpeningIndex = null;
+      e.preventDefault();
+      return;
+    }
+    if(selectedRoomId){
+      const r = rooms.find(rm => rm.id === selectedRoomId);
+      rooms = rooms.filter(rm => rm.id !== selectedRoomId);
+      selectedRoomId = null; selectedWallIndex = null;
+      saveRooms(); renderRoomList(); hideWallEditor(); renderPlan();
+      e.preventDefault();
+    }
+  });
+
+  planCanvas.addEventListener('mousedown', dragStart);
+  planCanvas.addEventListener('mousemove', dragMove);
+  window.addEventListener('mouseup', dragEnd);
+
+  planCanvas.addEventListener('touchstart', (e) => {
+    if(e.touches.length === 2){
+      pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+      pinchStartZoom = zoom;
+      dragging = null;
+      if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+      e.preventDefault();
+    }else if(e.touches.length === 1){
+      dragStart(e);
+      if(!wallDrawMode && !openingMode){
+        touchStartPos = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+        const pp = pointerPos(e);
+        longPressTimer = setTimeout(() => { longPressTimer = null; handleLongPress(pp.x, pp.y); }, 550);
+      }
+    }
+  }, {passive:false});
+  planCanvas.addEventListener('touchmove', (e) => {
+    if(longPressTimer && e.touches.length === 1){
+      const dx = e.touches[0].clientX - touchStartPos.x, dy = e.touches[0].clientY - touchStartPos.y;
+      if(Math.hypot(dx,dy) > 10){ clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+    if(e.touches.length === 2 && pinchStartDist){
+      const d = touchDist(e.touches[0], e.touches[1]);
+      zoom = Math.min(3, Math.max(0.4, pinchStartZoom * (d/pinchStartDist)));
+      renderPlan();
+      e.preventDefault();
+    }else if(e.touches.length === 1){
+      dragMove(e);
+    }
+  }, {passive:false});
+  planCanvas.addEventListener('touchend', (e) => {
+    if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+    if(e.touches.length < 2) pinchStartDist = null;
+    if(e.touches.length === 0) dragEnd();
+  });
+
+  document.getElementById('exportPDF').addEventListener('click', () => {
+    if(!rooms.length){ alert('Adicione pelo menos um cômodo antes de exportar.'); return; }
+    const prevZoom = zoom;
+    zoom = 1;
+    renderPlan();
+    const imgData = planCanvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation: planCanvas.width > planCanvas.height ? 'l' : 'p', unit:'pt', format:'a4'});
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 30;
+    pdf.setFontSize(16);
+    pdf.text('Planta2D — Planta Baixa', margin, margin);
+    pdf.setFontSize(10);
+    pdf.text('Gerado em ' + new Date().toLocaleDateString('pt-BR'), margin, margin+14);
+    const availW = pageW - margin*2, availH = pageH - margin*2 - 40;
+    const ratio = Math.min(availW/planCanvas.width, availH/planCanvas.height);
+    pdf.addImage(imgData, 'PNG', margin, margin+30, planCanvas.width*ratio, planCanvas.height*ratio);
+
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.text('Cômodos', margin, margin);
+    pdf.setFontSize(11);
+    let y = margin+24;
+    rooms.forEach((r,i) => {
+      const line = (i+1)+'. '+r.name+' — '+r.len+' × '+r.wid+' m'+(r.height ? ' · pé-direito '+r.height+'m' : '')+(r.polygon ? ' · forma medida' : '');
+      pdf.text(line, margin, y);
+      y += 18;
+      if(y > pageH-margin){ pdf.addPage(); y = margin; }
+    });
+    pdf.save('planta2d.pdf');
+    zoom = prevZoom;
+    renderPlan();
+  });
+
+  document.getElementById('exportBackup').addEventListener('click', () => {
+    if(!rooms.length && !walls.length){ alert('Não há nada pra salvar ainda.'); return; }
+    const blob = new Blob([JSON.stringify({rooms, walls}, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'planta2d-backup-' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('importBackup').addEventListener('click', () => {
+    document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const parsed = JSON.parse(reader.result);
+        let newRooms, newWalls;
+        if(Array.isArray(parsed)){ newRooms = parsed; newWalls = walls; } // backup antigo, sem paredes manuais
+        else if(parsed && Array.isArray(parsed.rooms)){ newRooms = parsed.rooms; newWalls = Array.isArray(parsed.walls) ? parsed.walls : []; }
+        else throw new Error('formato inválido');
+        if((rooms.length||walls.length) && !confirm('Isso vai substituir o que está na planta atual pelo conteúdo do backup. Continuar?')) return;
+        rooms = newRooms; walls = newWalls;
+        saveRooms(); saveWalls(); renderRoomList(); renderPlan();
+        alert('Backup restaurado: ' + rooms.length + ' cômodo(s), ' + walls.length + ' parede(s) manual(is).');
+      }catch(err){
+        alert('Não foi possível ler esse arquivo de backup.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  renderRoomList();
+  renderPlan();
+})();
+</script>
+</body>
+</html>
