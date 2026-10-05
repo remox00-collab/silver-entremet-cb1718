@@ -74,6 +74,12 @@
   #stage.fsfake{position:fixed; inset:0; z-index:100; height:100vh; border:none; border-radius:0;}
   .drawer{position:absolute; top:0; bottom:0; width:min(380px,88%); z-index:20; background:var(--bg); transition:transform .22s ease; box-shadow:none;}
   .drawer.left{left:0; transform:translateX(-100%); border-right:1px solid var(--line);}
+  .furnGrid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;}
+  .furnItem{background:var(--panel2,#1a2433); border:1px solid var(--line); border-radius:10px; padding:6px; text-align:center; cursor:pointer; font-size:12px; line-height:1.25;}
+  .furnItem img{width:100%; height:78px; object-fit:contain; border-radius:6px; background:rgba(255,255,255,.06); display:block; margin-bottom:4px;}
+  .furnItem .em{height:78px; display:flex; align-items:center; justify-content:center; font-size:34px;}
+  .furnItem:active{outline:2px solid var(--accent);}
+  .furnCat{margin:10px 0 6px; font-size:13px; font-weight:700; color:var(--accent);}
   .drawer.right{right:0; transform:translateX(100%); border-left:1px solid var(--line);}
   .drawer.open{transform:none; box-shadow:0 0 24px rgba(0,0,0,.5);}
   .drawerBody{height:100%; overflow-y:auto; padding:48px 12px 24px; -webkit-overflow-scrolling:touch;}
@@ -256,6 +262,29 @@
   
         </div>
       </aside>
+      <aside id="drawerFurn" class="drawer right">
+        <button id="tabFurn" class="drawerTab" style="top:64%;" title="Mostrar/esconder móveis">🛋️ Móveis</button>
+        <div class="drawerBody">
+          <div class="card" id="furnSelCard" style="display:none;">
+            <h2 id="furnSelTitle">Móvel selecionado</h2>
+            <div class="fields">
+              <div><label>Largura (m)</label><input id="fuW" inputmode="decimal"></div>
+              <div><label>Profundidade (m)</label><input id="fuD" inputmode="decimal"></div>
+              <div><label>Altura (m)</label><input id="fuH" inputmode="decimal"></div>
+              <div><label>Rotação (°)</label><input id="fuRot" inputmode="decimal"></div>
+              <div><label>Cor</label><input id="fuColor" type="color" style="width:100%;height:38px;padding:2px;"></div>
+            </div>
+            <div class="row" style="margin-top:10px;flex-wrap:wrap;">
+              <button id="fuRotL">⟲ 90°</button><button id="fuRotR">⟳ 90°</button><button id="fuDup">Duplicar</button><button id="fuDel" class="danger">Remover</button>
+            </div>
+            <p class="hint">Arraste o móvel na planta pra mover. Largura, profundidade e altura são sob medida.</p>
+          </div>
+          <div class="card"><h2>🛋️ Catálogo de móveis</h2>
+            <p class="hint">Toque num item pra colocar na planta. Depois veja tudo em 3D.</p>
+            <div id="furnCatalog"></div>
+          </div>
+        </div>
+      </aside>
       <aside id="drawerRight" class="drawer right">
         <button id="tabRight" class="drawerTab" title="Mostrar/esconder cômodos">🏠 Cômodos</button>
         <div class="drawerBody">
@@ -334,8 +363,8 @@
   function saveProjIndex(){ try{ localStorage.setItem(PROJECTS_KEY, JSON.stringify(projIndex)); }catch(e){} }
   function keysFor(pr){
     return pr.legacy
-      ? {rooms:"planta2d_rooms_v1", walls:"planta2d_walls_v1", draw:"planta2d_draw_v1"}
-      : {rooms:"planta2d_p_"+pr.id+"_rooms", walls:"planta2d_p_"+pr.id+"_walls", draw:"planta2d_p_"+pr.id+"_draw"};
+      ? {rooms:"planta2d_rooms_v1", walls:"planta2d_walls_v1", draw:"planta2d_draw_v1", furn:"planta2d_furn_v1"}
+      : {rooms:"planta2d_p_"+pr.id+"_rooms", walls:"planta2d_p_"+pr.id+"_walls", draw:"planta2d_p_"+pr.id+"_draw", furn:"planta2d_p_"+pr.id+"_furn"};
   }
   let activeProj = projIndex.list.find(pr => pr.id === projIndex.active) || projIndex.list[0];
   let STORAGE_KEY = keysFor(activeProj).rooms;
@@ -355,14 +384,45 @@
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms)); }catch(e){}
     scheduleCommit();
   }
+  let FURN_STORAGE_KEY = '';
   let DRAW_STORAGE_KEY = keysFor(activeProj).draw;
   let strokes = [];
   try{ const sd = localStorage.getItem(DRAW_STORAGE_KEY); if(sd) strokes = JSON.parse(sd); }catch(e){ strokes = []; }
   function saveDraw(){ try{ localStorage.setItem(DRAW_STORAGE_KEY, JSON.stringify(strokes)); }catch(e){} scheduleCommit(); }
+  // Móveis: catálogo (medidas padrão em metros; o usuário pode mudar tudo sob medida)
+  const FURN = {
+    sinkCounter:{name:'Pia de cozinha com balcão', cat:'Cozinha', e:'🚰', s:'sink',    w:1.8, d:0.6,  h:0.9,  color:'#a98263'},
+    island:     {name:'Ilha com bancada de pedra', cat:'Cozinha', e:'🍳', s:'island',  w:2.0, d:1.0,  h:0.92, color:'#3d4756'},
+    counter:    {name:'Balcão com tampo de pedra', cat:'Cozinha', e:'🗄️', s:'counter', w:1.2, d:0.6,  h:0.9,  color:'#a98263'},
+    wallCab:    {name:'Armário aéreo',             cat:'Cozinha', e:'🗄️', s:'wallCab', w:1.2, d:0.35, h:0.7,  color:'#a98263', elev:1.4},
+    fridge:     {name:'Geladeira',                 cat:'Cozinha', e:'🧊', s:'fridge',  w:0.7, d:0.7,  h:1.8,  color:'#e5e7ea'},
+    stove:      {name:'Fogão 4 bocas',             cat:'Cozinha', e:'🔥', s:'stove',   w:0.6, d:0.6,  h:0.9,  color:'#e5e7ea'},
+    bathSink:   {name:'Pia de banheiro com gabinete', cat:'Banheiro', e:'🚰', s:'bathSink', w:0.8, d:0.5, h:0.85, color:'#d9d2c4'},
+    toilet:     {name:'Vaso sanitário',            cat:'Banheiro', e:'🚽', s:'toilet', w:0.4, d:0.7,  h:0.8,  color:'#f4f4f2'},
+    shower:     {name:'Box de vidro',              cat:'Banheiro', e:'🚿', s:'shower', w:0.9, d:0.9,  h:2.0,  color:'#f4f4f2'},
+    sofa3:      {name:'Sofá 3 lugares',            cat:'Sala',    e:'🛋️', s:'sofa',    w:2.1, d:0.9,  h:0.85, color:'#6b7a8f'},
+    sofa2:      {name:'Sofá 2 lugares',            cat:'Sala',    e:'🛋️', s:'sofa',    w:1.6, d:0.9,  h:0.85, color:'#8a6f5a'},
+    armchair:   {name:'Poltrona',                  cat:'Sala',    e:'💺', s:'sofa',    w:0.85,d:0.85, h:0.85, color:'#a05a3c'},
+    coffee:     {name:'Mesa de centro',            cat:'Sala',    e:'☕', s:'table',   w:1.0, d:0.55, h:0.4,  color:'#8a5a33'},
+    tvRack:     {name:'Rack com TV',               cat:'Sala',    e:'📺', s:'tvRack',  w:1.6, d:0.4,  h:1.0,  color:'#5a4636'},
+    rug:        {name:'Tapete',                    cat:'Sala',    e:'🟫', s:'rug',     w:2.0, d:1.4,  h:0.02, color:'#b9a58a'},
+    dining:     {name:'Mesa de jantar',            cat:'Sala',    e:'🍽️', s:'table',   w:1.6, d:0.9,  h:0.75, color:'#8a5a33'},
+    chair:      {name:'Cadeira',                   cat:'Sala',    e:'🪑', s:'chair',   w:0.45,d:0.45, h:0.9,  color:'#8a5a33'},
+    bedD:       {name:'Cama de casal',             cat:'Quarto',  e:'🛏️', s:'bed',     w:1.6, d:2.0,  h:0.55, color:'#9aa7b8'},
+    bedS:       {name:'Cama de solteiro',          cat:'Quarto',  e:'🛏️', s:'bed',     w:0.9, d:1.9,  h:0.55, color:'#9aa7b8'},
+    night:      {name:'Criado-mudo',               cat:'Quarto',  e:'🗄️', s:'night',   w:0.45,d:0.4,  h:0.5,  color:'#8a5a33'},
+    wardrobe:   {name:'Guarda-roupa',              cat:'Quarto',  e:'🚪', s:'wardrobe',w:2.0, d:0.6,  h:2.2,  color:'#c9b79c'},
+    desk:       {name:'Escrivaninha',              cat:'Outros',  e:'🖥️', s:'desk',    w:1.3, d:0.6,  h:0.75, color:'#8a5a33'},
+    plant:      {name:'Planta em vaso',            cat:'Outros',  e:'🪴', s:'plant',   w:0.4, d:0.4,  h:1.0,  color:'#3f8a45'}
+  };
+  let furn = [], selectedFurnId = null, furnDrag = null;
+  FURN_STORAGE_KEY = keysFor(activeProj).furn;
+  try{ const fd = localStorage.getItem(FURN_STORAGE_KEY); if(fd) furn = JSON.parse(fd); }catch(e){ furn = []; }
+  function saveFurn(){ try{ localStorage.setItem(FURN_STORAGE_KEY, JSON.stringify(furn)); }catch(e){} scheduleCommit(); }
 
   // Histórico geral (Ctrl+Z / Ctrl+Y): cada ação concluída (mover, apagar, desenhar, editar...) vira um passo
   const undoStack = [], redoStack = [];
-  const snapState = () => JSON.stringify({rooms, walls, strokes});
+  const snapState = () => JSON.stringify({rooms, walls, strokes, furn});
   let lastSnap = snapState(), commitPending = false;
   function scheduleCommit(){
     if(commitPending) return;
@@ -385,9 +445,9 @@
   }
   function applySnap(snap){
     const st = JSON.parse(snap);
-    rooms = st.rooms; walls = st.walls; strokes = st.strokes;
+    rooms = st.rooms; walls = st.walls; strokes = st.strokes; furn = st.furn || []; selectedFurnId = null; furnDrag = null;
     lastSnap = snap;
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms)); localStorage.setItem(WALLS_STORAGE_KEY, JSON.stringify(walls)); localStorage.setItem(DRAW_STORAGE_KEY, JSON.stringify(strokes)); }catch(e){}
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms)); localStorage.setItem(WALLS_STORAGE_KEY, JSON.stringify(walls)); localStorage.setItem(DRAW_STORAGE_KEY, JSON.stringify(strokes)); localStorage.setItem(FURN_STORAGE_KEY, JSON.stringify(furn)); }catch(e){}
     dragging = null; rotating = null; draggingWall = null; draggingOpening = null; pivotDrag = null; pivotSnap = null;
     selectedRoomId = null; selectedWallIndex = null; selectedManualWallId = null;
     wallDrawStart = null; pendingOpeningWall = null; editOpeningIndex = null; curStroke = null; erasing = false;
@@ -1284,7 +1344,10 @@
     win2:       {name:'Janela de correr (2 folhas)',  type:'window',  kind:'winSlide',  w:1.5, h:1.1, sill:1.0},
     winCase:    {name:'Janela de abrir (2 folhas)',   type:'window',  kind:'winCase',   w:1.2, h:1.2, sill:0.9},
     winMax:     {name:'Janela maxim-ar',              type:'window',  kind:'winMax',    w:0.8, h:0.6, sill:1.5},
-    winFixed:   {name:'Janela fixa (vidro)',          type:'window',  kind:'winFixed',  w:1.2, h:1.2, sill:0.9}
+    winFixed:   {name:'Janela fixa (vidro)',          type:'window',  kind:'winFixed',  w:1.2, h:1.2, sill:0.9},
+    winTall:    {name:'Janela vertical de vidro (sob medida)',          type:'window',  kind:'winTall',      w:0.9, h:3.0, sill:0},
+    winTallFix: {name:'Janela vertical de vidro fixo (sob medida)',     type:'window',  kind:'winTallFix',   w:1.2, h:3.0, sill:0},
+    doorPivot:  {name:'Porta pivotante (sob medida)',                   type:'door',    kind:'pivot',        w:1.2, h:3.0, sill:0}
   };
   const fmtM = v => (+v).toFixed(2).replace('.',',');
   function legacyModel(o){
@@ -1314,8 +1377,36 @@
     });
     return out;
   }
+  // Modelos extras (janelas verticais altas e porta pivotante) — ficam separados pra não mexer nos modelos antigos
+  function buildOpeningMeshExtra(modelId, w, h, depth){
+    const m = OPEN_MODELS[modelId];
+    if(!m || ['winTall','winTallFix','pivot'].indexOf(m.kind) < 0) return null;
+    const g = new THREE.Group(), d2 = depth + 0.02;
+    const white = new THREE.MeshStandardMaterial({color:0xf3f3f0, roughness:0.5});
+    const dark = new THREE.MeshStandardMaterial({color:0x2d3640, roughness:0.4, metalness:0.4});
+    const stone = new THREE.MeshStandardMaterial({color:0x2b2f33, roughness:0.35, metalness:0.1});
+    const glass = new THREE.MeshStandardMaterial({color:0x9ad4ff, transparent:true, opacity:0.32, roughness:0.1, side:THREE.DoubleSide, depthWrite:false});
+    const box = (bw,bh,bd,x,y,z,mat,cast) => { const b = new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd), mat); b.position.set(x,y,z); b.castShadow = cast !== false; b.receiveShadow = true; g.add(b); return b; };
+    if(m.kind === 'pivot'){
+      const lw = w - 0.06, piv = new THREE.Group();
+      piv.position.set(-w/2 + 0.03 + lw*0.25, 0, 0); piv.rotation.y = -0.9;
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(lw, h-0.05, 0.06), new THREE.MeshStandardMaterial({color:0x5b3a22, roughness:0.6}));
+      leaf.position.set(lw*0.25, (h-0.05)/2, 0); leaf.castShadow = true; leaf.receiveShadow = true; piv.add(leaf);
+      const hd = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.2, 0.04), new THREE.MeshStandardMaterial({color:0xb7bec6, metalness:0.8, roughness:0.35}));
+      hd.position.set(lw*0.68, 1.1, 0.05); piv.add(hd);
+      g.add(piv); box(w, 0.05, d2, 0, h-0.025, 0, dark);
+    }else{
+      box(0.06,h,d2,-w/2+0.03,h/2,0,white); box(0.06,h,d2,w/2-0.03,h/2,0,white);
+      box(w,0.06,d2,0,h-0.03,0,white); box(w,0.06,d2,0,0.03,0,white);
+      box(w-0.12, h-0.12, 0.012, 0, h/2, 0, glass, false);
+      if(m.kind === 'winTall') box(0.015, h-0.12, 0.02, -w*0.18, h/2, 0, dark, false);
+      box(w+0.12, 0.04, depth+0.1, 0, 0.02, 0.02, stone);   // soleira de pedra
+    }
+    return g;
+  }
   // Modelo 3D de uma porta/janela. x = ao longo da parede (centro em 0), y = para cima (0 = base do vão), z = espessura
   function buildOpeningMesh(modelId, w, h, depth){
+    const ex = buildOpeningMeshExtra(modelId, w, h, depth); if(ex) return ex;
     const m = OPEN_MODELS[modelId] || OPEN_MODELS.door, g = new THREE.Group();
     const wood = new THREE.MeshStandardMaterial({color:0x8a5a33, roughness:0.7});
     const white = new THREE.MeshStandardMaterial({color:0xf3f3f0, roughness:0.5});
@@ -1358,6 +1449,173 @@
     }
     return g;
   }
+
+  // ===== Móveis =====
+  function drawFurniture(ctx, eff){
+    furn.forEach(f => {
+      const it = FURN[f.kind]; if(!it) return;
+      ctx.save();
+      ctx.translate(f.x*eff + MARGIN, f.y*eff + MARGIN);
+      ctx.rotate((f.rot||0)*Math.PI/180);
+      const W = f.w*eff, D = f.d*eff;
+      ctx.fillStyle = f.color || it.color; ctx.globalAlpha = it.s === 'rug' ? 0.55 : 0.88;
+      ctx.fillRect(-W/2, -D/2, W, D);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = f.id === selectedFurnId ? 3 : 1.2;
+      ctx.strokeStyle = f.id === selectedFurnId ? '#5eead4' : 'rgba(0,0,0,.55)';
+      ctx.strokeRect(-W/2, -D/2, W, D);
+      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(-W/2, D/2-3, W, 3);   // faixa = frente do móvel
+      if(Math.min(W,D) > 22){ ctx.font = Math.min(Math.min(W,D)*0.5, 26) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.e, 0, 0); }
+      ctx.restore();
+    });
+  }
+  function furnAt(px, py){
+    const eff = SCALE*zoom;
+    for(let i = furn.length-1; i >= 0; i--){
+      const f = furn[i], dx = px - (f.x*eff + MARGIN), dy = py - (f.y*eff + MARGIN), a = -(f.rot||0)*Math.PI/180;
+      const lx = dx*Math.cos(a) - dy*Math.sin(a), ly = dx*Math.sin(a) + dy*Math.cos(a);
+      if(Math.abs(lx) <= f.w*eff/2 + 3 && Math.abs(ly) <= f.d*eff/2 + 3) return f;
+    }
+    return null;
+  }
+  function buildFurnitureMesh(shape, w, d, h, color){
+    const g = new THREE.Group();
+    const M = (c, r, m) => new THREE.MeshStandardMaterial({color:c, roughness: r == null ? 0.7 : r, metalness: m || 0});
+    const body = M(color), light = M(new THREE.Color(color).offsetHSL(0,0,0.06), 0.9), stone = M(0xe9e6df, 0.25, 0.05), dark = M(0x1f2630, 0.5, 0.2), white = M(0xf4f4f2, 0.5), steel = M(0xb7bec6, 0.35, 0.8), wood = M(0x8a5a33, 0.7);
+    const glass = new THREE.MeshStandardMaterial({color:0x9ad4ff, transparent:true, opacity:0.3, roughness:0.1, side:THREE.DoubleSide, depthWrite:false});
+    const b = (sx,sy,sz,x,y0,z,mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz), mat); m.position.set(x, y0+sy/2, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+    const cyl = (rt,rb,hh,x,y0,z,mat) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,hh,16), mat); m.position.set(x, y0+hh/2, z); m.castShadow = true; g.add(m); return m; };
+    const sph = (r,x,y,z,mat) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r,12,9), mat); m.position.set(x,y,z); m.castShadow = true; g.add(m); return m; };
+    const faucet = (x,z,top) => { cyl(0.012,0.012,0.22,x,top,z,steel); b(0.02,0.02,0.12,x,top+0.2,z+0.06,steel); };
+    const legs = (lh, lw, ld, mat) => [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(q => b(0.05,lh,0.05,q[0]*(lw/2-0.06),0,q[1]*(ld/2-0.06),mat));
+    switch(shape){
+      case 'sink': b(w,h-0.04,d,0,0,0,body); b(w+0.02,0.04,d+0.02,0,h-0.04,0,stone); b(w*0.36,0.012,d*0.62,-w*0.15,h,0,dark); b(w*0.18,0.012,d*0.5,w*0.28,h,0,steel); faucet(-w*0.15,-d*0.3,h); break;
+      case 'island': b(w-0.1,h-0.05,d-0.35,0,0,-0.17,body); b(w+0.04,0.05,d,0,h-0.05,0,stone); break;
+      case 'counter': b(w,h-0.04,d,0,0,0,body); b(w+0.02,0.04,d+0.02,0,h-0.04,0,stone); b(0.01,h-0.12,0.01,0,0.04,d/2+0.003,dark); break;
+      case 'wallCab': b(w,h,d,0,0,0,body); b(0.01,h-0.1,0.01,0,0.05,d/2+0.003,dark); b(0.02,0.18,0.02,-0.05,h*0.35,d/2+0.015,steel); b(0.02,0.18,0.02,0.05,h*0.35,d/2+0.015,steel); break;
+      case 'fridge': b(w,h,d,0,0,0,white); b(w,0.012,0.01,0,h*0.68,d/2+0.004,dark); b(0.02,0.3,0.03,w/2-0.08,h*0.72,d/2+0.02,steel); b(0.02,0.4,0.03,w/2-0.08,h*0.3,d/2+0.02,steel); break;
+      case 'stove': b(w,h-0.02,d,0,0,0,white); b(w,0.02,d,0,h-0.02,0,dark); [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(q => cyl(0.08,0.08,0.012,q[0]*w*0.22,h,q[1]*d*0.22,steel)); b(w*0.7,h*0.35,0.01,0,h*0.22,d/2+0.004,dark); break;
+      case 'bathSink': b(w,h-0.13,d,0,0,0,body); b(w+0.02,0.03,d+0.02,0,h-0.13,0,stone); b(w*0.55,0.1,d*0.7,0,h-0.1,0,white); faucet(0,-d*0.32,h); break;
+      case 'toilet': b(w*0.85,0.4,d*0.62,0,0,d*0.16,white); b(w*0.95,h-0.4,0.2,0,0.4,-d/2+0.1,white); b(w*0.88,0.03,d*0.64,0,0.4,d*0.16,white); break;
+      case 'shower': b(w,0.06,d,0,0,0,white); [b(w,h-0.06,0.012,0,0.06,d/2,glass), b(0.012,h-0.06,d,w/2,0.06,0,glass)].forEach(m => m.castShadow = false); b(0.03,h,0.03,w/2,0,d/2,steel); b(0.03,h,0.03,-w/2,0,d/2,steel); break;
+      case 'sofa': {
+        const n = Math.max(1, Math.round((w-0.3)/0.65)), cw = (w-0.3)/n;
+        legs(0.08, w, d, dark); b(w,0.42,d,0,0.08,0,body); b(w-0.3,h-0.5,0.22,0,0.5,-d/2+0.11,body);
+        b(0.16,0.3,d,-(w/2-0.08),0.5,0,body); b(0.16,0.3,d,(w/2-0.08),0.5,0,body);
+        for(let i=0;i<n;i++) b(cw-0.02,0.12,d-0.3,-(w-0.3)/2 + cw*(i+0.5),0.5,0.1,light);
+        break; }
+      case 'table': b(w,0.04,d,0,h-0.04,0,body); legs(h-0.04, w, d, body); break;
+      case 'chair': b(w,0.04,d,0,0.44,0,body); legs(0.44, w, d, body); b(w,h-0.48,0.03,0,0.48,-d/2+0.015,body); break;
+      case 'tvRack': b(w,0.45,d,0,0,0,body); b(0.25,0.1,0.15,0,0.45,0,dark); b(w*0.75,Math.max(0.2,h-0.55),0.04,0,0.55,0,dark); break;
+      case 'rug': b(w,h,d,0,0,0,body).castShadow = false; break;
+      case 'bed': { const n = w > 1.2 ? 2 : 1;
+        b(w,0.3,d,0,0.05,0,wood); b(w-0.06,0.2,d-0.1,0,0.35,0.03,body); b(w,0.9,0.08,0,0.05,-d/2+0.04,wood);
+        for(let i=0;i<n;i++) b(w/n-0.12,0.12,0.4,-w/2 + (w/n)*(i+0.5),0.55,-d/2+0.3,white);
+        break; }
+      case 'night': b(w,h,d,0,0,0,body); b(w-0.06,0.01,0.01,0,h*0.6,d/2+0.003,dark); b(0.08,0.02,0.02,0,h*0.8,d/2+0.015,steel); break;
+      case 'wardrobe': b(w,h,d,0,0,0,body); b(0.01,h-0.1,0.01,0,0.05,d/2+0.004,dark); b(0.02,0.25,0.02,-0.05,h*0.5,d/2+0.02,steel); b(0.02,0.25,0.02,0.05,h*0.5,d/2+0.02,steel); break;
+      case 'desk': b(w,0.04,d,0,h-0.04,0,body); b(0.04,h-0.04,d-0.05,-w/2+0.02,0,0,body); b(0.4,h-0.04,d-0.05,w/2-0.2,0,0,body); b(0.36,0.01,0.01,w/2-0.2,h*0.6,d/2-0.02,dark); break;
+      case 'plant': { const gm = M(0x3f8a45, 0.9);
+        cyl(w*0.4,w*0.3,h*0.25,0,0,0,M(0xb5651d)); cyl(0.02,0.02,h*0.4,0,h*0.25,0,M(0x5b3a22));
+        sph(w*0.38,0,h*0.7,0,gm); sph(w*0.3,w*0.18,h*0.55,0.05,gm); sph(w*0.3,-w*0.18,h*0.85,-0.05,gm); break; }
+      default: b(w,h,d,0,0,0,body);
+    }
+    return g;
+  }
+  const furnThumbCache = {};
+  function furnThumb(kind){
+    if(furnThumbCache[kind]) return furnThumbCache[kind];
+    if(typeof THREE === 'undefined') return '';
+    try{
+      if(!furnThumb.rd){
+        const cv = document.createElement('canvas'); cv.width = 180; cv.height = 130;
+        furnThumb.rd = new THREE.WebGLRenderer({canvas:cv, antialias:true, alpha:true, preserveDrawingBuffer:true}); furnThumb.rd.setSize(180,130,false);
+        furnThumb.sc = new THREE.Scene(); furnThumb.sc.add(new THREE.HemisphereLight(0xffffff,0x888888,1));
+        const dl = new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(2,4,3); furnThumb.sc.add(dl);
+        furnThumb.cam = new THREE.PerspectiveCamera(35, 180/130, 0.1, 60);
+      }
+      const it = FURN[kind], m = buildFurnitureMesh(it.s, it.w, it.d, it.h, it.color);
+      if(it.elev) m.position.y = it.elev;
+      furnThumb.sc.add(m);
+      const top = it.h + (it.elev || 0), r = Math.max(it.w, it.d, top);
+      furnThumb.cam.position.set(r*1.35, top/2 + r*0.75, r*1.75); furnThumb.cam.lookAt(0, top/2, 0);
+      furnThumb.rd.render(furnThumb.sc, furnThumb.cam);
+      const url = furnThumb.rd.domElement.toDataURL('image/png');
+      furnThumb.sc.remove(m);
+      return furnThumbCache[kind] = url;
+    }catch(e){ return ''; }
+  }
+  function renderFurnCatalog(){
+    const box = document.getElementById('furnCatalog'); if(!box) return;
+    const cats = []; Object.keys(FURN).forEach(k => { if(cats.indexOf(FURN[k].cat) < 0) cats.push(FURN[k].cat); });
+    box.innerHTML = cats.map(c => '<div class="furnCat">' + c + '</div><div class="furnGrid">' + Object.keys(FURN).filter(k => FURN[k].cat === c).map(k => {
+      const it = FURN[k];
+      return '<div class="furnItem" data-kind="' + k + '"><div class="em">' + it.e + '</div><div><b>' + it.name + '</b></div><div class="hint">' + fmtM(it.w) + ' × ' + fmtM(it.d) + ' × ' + fmtM(it.h) + ' m</div></div>';
+    }).join('') + '</div>').join('');
+    box.querySelectorAll('.furnItem').forEach(el => el.addEventListener('click', () => addFurn(el.dataset.kind)));
+  }
+  function fillFurnThumbs(){
+    document.querySelectorAll('#furnCatalog .furnItem').forEach(el => {
+      if(el.dataset.thumb) return;
+      const url = furnThumb(el.dataset.kind); el.dataset.thumb = '1';
+      if(typeof url === 'string' && url){ const em = el.querySelector('.em'); const img = document.createElement('img'); img.src = url; img.alt = ''; em.replaceWith(img); }
+    });
+  }
+  function addFurn(kind){
+    const it = FURN[kind], eff = SCALE*zoom;
+    let x = (planWrap.scrollLeft + planWrap.clientWidth/2 - MARGIN)/eff, y = (planWrap.scrollTop + planWrap.clientHeight/2 - MARGIN)/eff;
+    // vai pro cômodo selecionado, ou pro cômodo mais perto do centro da tela
+    let rr = rooms.find(r => r.id === selectedRoomId);
+    if(!rr && rooms.length) rr = rooms.slice().sort((a,b) => Math.hypot(a.x+a.len/2-x, a.y+a.wid/2-y) - Math.hypot(b.x+b.len/2-x, b.y+b.wid/2-y))[0];
+    if(rr){ x = rr.x + rr.len/2; y = rr.y + rr.wid/2; }
+    const stacked = furn.filter(q => Math.hypot(q.x-x, q.y-y) < 0.6).length;
+    x += stacked*0.3; y += stacked*0.3;
+    x = Math.max(0.5, Math.round(x*20)/20); y = Math.max(0.5, Math.round(y*20)/20);
+    const f = {id: Date.now() + Math.random(), kind, x, y, w:it.w, d:it.d, h:it.h, rot:0, color:it.color};
+    if(it.elev) f.elev = it.elev;
+    furn.push(f); selectedFurnId = f.id; selectedRoomId = null;
+    saveFurn(); renderFurnSel(); renderPlan();
+  }
+  function renderFurnSel(){
+    const card = document.getElementById('furnSelCard'); if(!card) return;
+    const f = furn.find(x => x.id === selectedFurnId);
+    if(!f){ card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    document.getElementById('furnSelTitle').textContent = (FURN[f.kind] ? FURN[f.kind].name : 'Móvel');
+    const set = (id, v) => { const el = document.getElementById(id); if(document.activeElement !== el) el.value = v; };
+    set('fuW', f.w); set('fuD', f.d); set('fuH', f.h); set('fuRot', f.rot || 0); set('fuColor', f.color || '#888888');
+  }
+  function removeFurn(){
+    if(!selectedFurnId) return;
+    furn = furn.filter(x => x.id !== selectedFurnId); selectedFurnId = null;
+    saveFurn(); renderFurnSel(); renderPlan();
+  }
+  renderFurnCatalog();
+  document.getElementById('tabFurn').addEventListener('click', () => {
+    const dr = document.getElementById('drawerFurn');
+    dr.classList.toggle('open');
+    if(dr.classList.contains('open')){ document.getElementById('drawerRight').classList.remove('open'); setTimeout(fillFurnThumbs, 60); }
+  });
+  document.getElementById('tabRight').addEventListener('click', () => { if(document.getElementById('drawerRight').classList.contains('open')) document.getElementById('drawerFurn').classList.remove('open'); });
+  [['fuW','w'],['fuD','d'],['fuH','h'],['fuRot','rot']].forEach(([id,key]) => document.getElementById(id).addEventListener('input', () => {
+    const f = furn.find(x => x.id === selectedFurnId); if(!f) return;
+    const v = parseFloat(document.getElementById(id).value.replace(',','.'));
+    if(isNaN(v) || (key !== 'rot' && v <= 0)) return;
+    f[key] = v; saveFurn(); renderPlan();
+  }));
+  document.getElementById('fuColor').addEventListener('input', () => { const f = furn.find(x => x.id === selectedFurnId); if(!f) return; f.color = document.getElementById('fuColor').value; saveFurn(); renderPlan(); });
+  const turnFurn = deg => { const f = furn.find(x => x.id === selectedFurnId); if(!f) return; f.rot = (((f.rot||0) + deg) % 360 + 360) % 360; saveFurn(); renderFurnSel(); renderPlan(); };
+  document.getElementById('fuRotL').addEventListener('click', () => turnFurn(-90));
+  document.getElementById('fuRotR').addEventListener('click', () => turnFurn(90));
+  document.getElementById('fuDup').addEventListener('click', () => {
+    const f = furn.find(x => x.id === selectedFurnId); if(!f) return;
+    const c = Object.assign({}, f, {id: Date.now() + Math.random(), x: f.x + 0.3, y: f.y + 0.3});
+    furn.push(c); selectedFurnId = c.id; saveFurn(); renderFurnSel(); renderPlan();
+  });
+  document.getElementById('fuDel').addEventListener('click', removeFurn);
+  document.addEventListener('keydown', (e) => {
+    if((e.key === 'Delete' || e.key === 'Backspace') && selectedFurnId && !/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName || '')){ removeFurn(); e.preventDefault(); }
+  });
 
   function effectiveOpenings(r, withCuts){
     const res = (r.openings||[]).map(o => Object.assign({}, o));
@@ -1491,6 +1749,14 @@
         collisionSegs.push({x1:ep.x1,z1:ep.y1,x2:ep.x2,z2:ep.y2});
       });
       cx += (w.x1+w.x2)/2; cz += (w.y1+w.y2)/2; count++;
+    });
+    furn.forEach(f => {
+      const it = FURN[f.kind]; if(!it) return;
+      const fm = buildFurnitureMesh(it.s, it.w, it.d, it.h, f.color || it.color);
+      fm.scale.set(f.w/it.w, f.h/it.h, f.d/it.d);
+      fm.position.set(f.x, (f.elev != null ? f.elev : (it.elev || 0)) + 0.01, f.y);
+      fm.rotation.y = -(f.rot || 0)*Math.PI/180;
+      threeScene.add(fm);
     });
     const tx = count ? cx/count : 3, tz = count ? cz/count : 3;
     sceneCenter = {x:tx, z:tz};
@@ -2259,6 +2525,7 @@
       pctx.restore();
     });
     // desenho livre (rascunho)
+    drawFurniture(pctx, eff);
     if(document.getElementById('fdShow').checked){
       pctx.save();
       pctx.lineCap = 'round'; pctx.lineJoin = 'round';
@@ -2486,6 +2753,15 @@
       e.preventDefault();
       return;
     }
+    { const fh = furnAt(p.x, p.y);
+      if(fh){
+        selectedRoomId = null; selectedWallIndex = null; selectedFurnId = fh.id; hideWallEditor();
+        const eff0 = SCALE*zoom;
+        furnDrag = {f:fh, ox:p.x - (fh.x*eff0 + MARGIN), oy:p.y - (fh.y*eff0 + MARGIN), moved:false};
+        renderFurnSel(); renderPlan(); e.preventDefault(); return;
+      }
+      if(selectedFurnId){ selectedFurnId = null; renderFurnSel(); }
+    }
     selectedWallIndex = null;
     hideWallEditor();
     const r = roomAt(p.x, p.y);
@@ -2518,6 +2794,12 @@
   }
   function dragMove(e){
     const p = pointerPos(e);
+    if(furnDrag){
+      const effF = SCALE*zoom;
+      furnDrag.f.x = Math.max(0, Math.round((p.x - furnDrag.ox - MARGIN)/effF*20)/20);
+      furnDrag.f.y = Math.max(0, Math.round((p.y - furnDrag.oy - MARGIN)/effF*20)/20);
+      furnDrag.moved = true; renderPlan(); if(e.touches) e.preventDefault(); return;
+    }
     if(wallDrawMode){
       if(wallDrawStart && (!e.touches || wallTouchPending)){ updateWallPreview(p); renderPlan(); }
       if(e.touches) e.preventDefault();
@@ -2595,6 +2877,7 @@
     }
   }
   function dragEnd(){
+    if(furnDrag){ if(furnDrag.moved) saveFurn(); furnDrag = null; renderFurnSel(); return; }
     if(wallTouchPending){
       wallTouchPending = false;
       if(wallDrawMode && wallDrawStart && wallPreview){ placeWallTo(wallPreview); renderPlan(); }
@@ -2784,7 +3067,7 @@
 
   document.getElementById('exportBackup').addEventListener('click', () => {
     if(!rooms.length && !walls.length && !strokes.length){ alert('Não há nada pra salvar ainda.'); return; }
-    const blob = new Blob([JSON.stringify({name: activeProj.name, rooms, walls, draw: strokes}, null, 2)], {type:'application/json'});
+    const blob = new Blob([JSON.stringify({name: activeProj.name, rooms, walls, draw: strokes, furn}, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2810,6 +3093,7 @@
         if((rooms.length||walls.length) && !confirm('Isso vai substituir o que está no projeto aberto ("' + activeProj.name + '") pelo conteúdo do backup. Continuar?')) return;
         rooms = newRooms; walls = newWalls;
         if(parsed && !Array.isArray(parsed) && Array.isArray(parsed.draw)){ strokes = parsed.draw; saveDraw(); }
+        if(parsed && !Array.isArray(parsed) && Array.isArray(parsed.furn)){ furn = parsed.furn; saveFurn(); }
         saveRooms(); saveWalls(); renderRoomList(); renderPlan();
         alert('Backup restaurado: ' + rooms.length + ' cômodo(s), ' + walls.length + ' parede(s) manual(is).');
       }catch(err){
@@ -3052,6 +3336,7 @@
     const k = keysFor(pr);
     STORAGE_KEY = k.rooms; WALLS_STORAGE_KEY = k.walls; DRAW_STORAGE_KEY = k.draw;
     rooms = loadKey(k.rooms, []); walls = loadKey(k.walls, []); strokes = loadKey(k.draw, []);
+    FURN_STORAGE_KEY = k.furn; furn = loadKey(k.furn, []); selectedFurnId = null; furnDrag = null;
     undoStack.length = 0; redoStack.length = 0; lastSnap = snapState(); commitPending = false;
     dragging = null; rotating = null; draggingWall = null; draggingOpening = null; pivotDrag = null; pivotSnap = null;
     selectedRoomId = null; selectedWallIndex = null; selectedManualWallId = null; editingRoomId = null;
@@ -3083,7 +3368,7 @@
     const gone = activeProj, k = keysFor(gone);
     const idx = projIndex.list.findIndex(x => x.id === gone.id);
     const nextPr = projIndex.list[idx+1] || projIndex.list[idx-1];
-    try{ localStorage.removeItem(k.rooms); localStorage.removeItem(k.walls); localStorage.removeItem(k.draw); }catch(e){}
+    try{ localStorage.removeItem(k.rooms); localStorage.removeItem(k.walls); localStorage.removeItem(k.draw); localStorage.removeItem(k.furn); }catch(e){}
     projIndex.list.splice(idx, 1);
     activeProj = null;
     saveProjIndex();
