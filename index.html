@@ -69,7 +69,7 @@
   #planWrap{position:absolute; inset:0; overflow:auto; background:#0e1620; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
   #plan3DWrap{display:none; position:absolute; inset:0; background:#0e1620; overflow:hidden;}
   #plan3DCanvas{display:block; width:100%; height:100%; touch-action:none;}
-  #stage{position:relative; height:calc(100vh - 130px); min-height:440px; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#0e1620;}
+  #stage{position:relative; isolation:isolate; height:calc(100vh - 130px); min-height:440px; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#0e1620;}
   #stage:fullscreen{height:100%; border:none; border-radius:0;}
   #stage.fsfake{position:fixed; inset:0; z-index:100; height:100vh; border:none; border-radius:0;}
   .drawer{position:absolute; top:0; bottom:0; width:min(380px,88%); z-index:20; background:var(--bg); transition:transform .22s ease; box-shadow:none;}
